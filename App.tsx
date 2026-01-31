@@ -12,7 +12,11 @@ import {
   PieChart,
   Plus,
   CloudOff,
-  Github
+  Github,
+  Download,
+  RefreshCw,
+  X,
+  Monitor
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -23,8 +27,7 @@ import {
   Tooltip, 
   ResponsiveContainer,
   LineChart,
-  Line,
-  Cell
+  Line
 } from 'recharts';
 import { Company, Employee, MonthlyParameters, PayrollResult } from './types';
 import { db } from './store/db';
@@ -36,17 +39,40 @@ const App: React.FC = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [payrollResults, setPayrollResults] = useState<PayrollResult[]>([]);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
+  const [isStandalone, setIsStandalone] = useState(false);
 
   useEffect(() => {
+    // Detectar si ya está instalada y corriendo como app
+    if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone) {
+      setIsStandalone(true);
+    }
+
+    // Escuchar eventos de red
     window.addEventListener('online', () => setIsOffline(false));
     window.addEventListener('offline', () => setIsOffline(true));
     
-    // Load initial data
+    // Capturar el evento de instalación del navegador
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault();
+      console.log('Evento beforeinstallprompt capturado');
+      setInstallPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    // Detectar si hay actualización de Service Worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        setUpdateAvailable(true);
+      });
+    }
+
+    // Cargar datos iniciales
     const companies = db.getCompanies();
     if (companies.length > 0) {
       setSelectedCompany(companies[0]);
     } else {
-      // Dummy company for first time load
       const dummy: Company = {
         id: '1',
         rut: '76.123.456-K',
@@ -57,15 +83,33 @@ const App: React.FC = () => {
       db.saveCompany(dummy);
       setSelectedCompany(dummy);
     }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
   }, []);
 
   useEffect(() => {
     if (selectedCompany) {
       const emps = db.getEmployees(selectedCompany.id);
       setEmployees(emps);
-      setPayrollResults(db.getPayrollResults(selectedCompany.id, 3, 2024)); // Default to March 2024
+      setPayrollResults(db.getPayrollResults(selectedCompany.id, 3, 2024));
     }
   }, [selectedCompany]);
+
+  const handleInstall = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    console.log(`Usuario eligió instalación: ${outcome}`);
+    if (outcome === 'accepted') {
+      setInstallPrompt(null);
+    }
+  };
+
+  const handleUpdate = () => {
+    window.location.reload();
+  };
 
   const runCalculation = () => {
     if (!selectedCompany) return;
@@ -81,7 +125,6 @@ const App: React.FC = () => {
     const results = employees.map(emp => calculatePayroll(emp, params));
     db.savePayrollResults(selectedCompany.id, 3, 2024, results);
     setPayrollResults(results);
-    alert('Cálculo de remuneraciones completado para ' + results.length + ' trabajadores.');
   };
 
   const exportToContabilidad = () => {
@@ -105,6 +148,19 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
+      {/* Notificación de Actualización de GitHub */}
+      {updateAvailable && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-bounce">
+          <button 
+            onClick={handleUpdate}
+            className="flex items-center gap-3 px-6 py-3 bg-indigo-600 text-white rounded-full shadow-2xl font-bold border-2 border-white"
+          >
+            <RefreshCw className="w-5 h-5 animate-spin-slow" />
+            Nueva actualización de GitHub lista
+          </button>
+        </div>
+      )}
+
       {/* Sidebar */}
       <aside className="w-64 bg-slate-900 text-white flex flex-col shadow-2xl z-20">
         <div className="p-6 flex flex-col gap-2">
@@ -115,9 +171,9 @@ const App: React.FC = () => {
             <h1 className="text-lg font-bold leading-tight tracking-tight">Remuneraciones<br/><span className="text-indigo-400 font-medium">Pro Analytics</span></h1>
           </div>
           {isOffline && (
-            <div className="flex items-center gap-2 mt-4 px-3 py-1.5 bg-amber-500/20 text-amber-300 rounded-lg text-xs font-medium">
+            <div className="flex items-center gap-2 mt-4 px-3 py-1.5 bg-amber-500/20 text-amber-300 rounded-lg text-xs font-medium border border-amber-500/30">
               <CloudOff className="w-3.5 h-3.5" />
-              Modo Offline Activo
+              Trabajando Offline
             </div>
           )}
         </div>
@@ -139,11 +195,20 @@ const App: React.FC = () => {
           ))}
         </nav>
 
-        <div className="p-4 mt-auto">
-          <button className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-slate-800 rounded-xl text-sm font-medium text-slate-300 hover:bg-slate-700 transition-colors">
-            <Github className="w-4 h-4" />
-            Actualizar vía GitHub
-          </button>
+        <div className="p-4 mt-auto space-y-2">
+          {installPrompt && !isStandalone && (
+            <button 
+              onClick={handleInstall}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 rounded-xl text-xs font-bold text-white hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-600/20 animate-pulse"
+            >
+              <Download className="w-4 h-4" />
+              Instalar App
+            </button>
+          )}
+          <div className="flex items-center justify-center gap-2 text-[10px] text-slate-500 font-medium bg-slate-800/50 py-2 rounded-lg border border-slate-700">
+             <Github className="w-3 h-3" />
+             v1.0.3 - Sincronizado
+          </div>
         </div>
       </aside>
 
@@ -154,85 +219,112 @@ const App: React.FC = () => {
           <div className="flex items-center gap-4">
             <Building2 className="w-6 h-6 text-slate-400" />
             <div>
-              <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">Empresa Activa</p>
-              <p className="text-sm font-semibold text-slate-900">{selectedCompany?.name}</p>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Empresa Activa</p>
+              <p className="text-sm font-bold text-slate-900 uppercase">{selectedCompany?.name}</p>
             </div>
           </div>
           
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-full border border-slate-200">
-              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-              <span className="text-xs font-semibold text-slate-600 tracking-wide uppercase">Periodo: Marzo 2024</span>
-            </div>
-            <div className="w-10 h-10 rounded-full bg-slate-200 border-2 border-white shadow-sm flex items-center justify-center overflow-hidden">
-                <img src="https://picsum.photos/40/40" alt="Avatar" />
+            <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 rounded-full border border-slate-200">
+              <span className={`w-2 h-2 rounded-full ${isOffline ? 'bg-amber-500' : 'bg-emerald-500'} animate-pulse`}></span>
+              <span className="text-[10px] font-bold text-slate-600 tracking-wide uppercase">Marzo 2024</span>
             </div>
           </div>
         </header>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-8 bg-slate-50">
+        <div className="flex-1 overflow-y-auto p-8 bg-slate-50/50">
+          
+          {/* Banner Prominente de Instalación en Dashboard */}
+          {activeTab === 'dashboard' && installPrompt && !isStandalone && (
+            <div className="mb-8 p-1 bg-gradient-to-r from-indigo-600 via-purple-600 to-emerald-500 rounded-[2rem] shadow-2xl shadow-indigo-200/50 animate-in fade-in zoom-in duration-700">
+              <div className="bg-white/95 backdrop-blur-sm p-6 rounded-[1.9rem] flex flex-col md:flex-row items-center justify-between gap-6">
+                <div className="flex items-center gap-5">
+                  <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center">
+                    <Monitor className="w-8 h-8 text-indigo-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black text-slate-900 leading-tight">Usa Remuneraciones Pro desde tu Escritorio</h2>
+                    <p className="text-slate-500 font-medium">Instala la aplicación para un acceso más rápido y 100% offline.</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                  <button 
+                    onClick={() => setInstallPrompt(null)}
+                    className="p-4 text-slate-400 hover:text-slate-600 transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                  <button 
+                    onClick={handleInstall}
+                    className="flex-1 md:flex-none px-8 py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-xl hover:bg-slate-800 transition-all flex items-center justify-center gap-3"
+                  >
+                    <Download className="w-5 h-5" />
+                    Instalar Ahora
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'dashboard' && (
-            <div className="space-y-8 animate-in fade-in duration-500">
+            <div className="space-y-8 animate-in fade-in slide-in-from-top-2 duration-500">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {[
-                  { label: 'Costo Total Empresa', value: '$12.450.000', icon: Database, color: 'text-indigo-600' },
-                  { label: 'Total Trabajadores', value: employees.length, icon: Users, color: 'text-emerald-600' },
-                  { label: 'Netos a Pagar', value: '$9.820.500', icon: Calculator, color: 'text-rose-600' },
-                  { label: 'Centro de Costos', value: '4 Activos', icon: PieChart, color: 'text-amber-600' },
+                  { label: 'Costo Empresa', value: '$12.450.000', icon: Database, color: 'text-indigo-600' },
+                  { label: 'Personal', value: employees.length, icon: Users, color: 'text-emerald-600' },
+                  { label: 'Sueldos Líquidos', value: '$9.820.500', icon: Calculator, color: 'text-rose-600' },
+                  { label: 'Sucursales', value: '4 Activos', icon: PieChart, color: 'text-amber-600' },
                 ].map((stat, i) => (
-                  <div key={i} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
+                  <div key={i} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 hover:shadow-xl hover:-translate-y-1 transition-all">
                     <div className="flex items-center justify-between mb-4">
-                      <div className={`p-2 rounded-lg bg-slate-50 ${stat.color}`}>
+                      <div className={`p-3 rounded-2xl bg-slate-50 ${stat.color}`}>
                         <stat.icon className="w-6 h-6" />
                       </div>
                       <ChevronRight className="w-4 h-4 text-slate-300" />
                     </div>
-                    <p className="text-sm font-medium text-slate-500">{stat.label}</p>
-                    <p className="text-2xl font-bold text-slate-900 mt-1">{stat.value}</p>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{stat.label}</p>
+                    <p className="text-2xl font-black text-slate-900 mt-1">{stat.value}</p>
                   </div>
                 ))}
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200">
-                  <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
-                    <BarChart3 className="w-5 h-5 text-indigo-500" />
-                    Distribución de Costos por AFP
+                <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
+                  <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-indigo-500" />
+                    Distribución AFP
                   </h3>
-                  <div className="h-[300px]">
+                  <div className="h-[250px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={payrollResults.length > 0 ? payrollResults.map(r => ({ name: r.employeeId, value: r.afpAmount })) : [{name: 'Sin datos', value: 0}]}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                         <XAxis dataKey="name" hide />
-                        <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
-                        <Tooltip />
-                        <Bar dataKey="value" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                        <YAxis stroke="#94a3b8" fontSize={10} fontWeight="bold" tickLine={false} axisLine={false} />
+                        <Tooltip contentStyle={{ borderRadius: '15px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                        <Bar dataKey="value" fill="#6366f1" radius={[8, 8, 8, 8]} barSize={20} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
 
-                <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200">
-                  <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
-                    <LineChart className="w-5 h-5 text-emerald-500" />
-                    Proyección de Gasto Mensual
+                <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
+                   <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                    <LineChart className="w-4 h-4 text-emerald-500" />
+                    Tendencia de Gastos
                   </h3>
-                  <div className="h-[300px]">
+                  <div className="h-[250px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={[
                         { name: 'Ene', value: 11000000 },
                         { name: 'Feb', value: 11500000 },
                         { name: 'Mar', value: 12450000 },
-                        { name: 'Abr', value: 12200000 },
-                        { name: 'May', value: 12800000 },
-                        { name: 'Jun', value: 13100000 },
                       ]}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
-                        <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
-                        <Tooltip />
-                        <Line type="monotone" dataKey="value" stroke="#10b981" strokeWidth={3} dot={{ fill: '#10b981', r: 4 }} />
+                        <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} fontWeight="bold" tickLine={false} axisLine={false} />
+                        <YAxis stroke="#94a3b8" fontSize={10} fontWeight="bold" tickLine={false} axisLine={false} />
+                        <Tooltip contentStyle={{ borderRadius: '15px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                        <Line type="monotone" dataKey="value" stroke="#10b981" strokeWidth={4} dot={{ fill: '#10b981', r: 6, strokeWidth: 2, stroke: '#fff' }} />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
@@ -241,167 +333,57 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {activeTab === 'employees' && (
-            <div className="animate-in slide-in-from-bottom-4 duration-500">
-               <div className="flex items-center justify-between mb-8">
-                <div>
-                  <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Nómina de Trabajadores</h2>
-                  <p className="text-slate-500 text-sm mt-1">Administra la base de datos de tu personal siguiendo las guías de creación paso a paso.</p>
-                </div>
-                <button 
-                   onClick={() => {
-                     const newEmp: Employee = {
-                       id: (employees.length + 1).toString(),
-                       companyId: selectedCompany?.id || '1',
-                       rut: '20.456.789-0',
-                       firstName: 'Nuevo',
-                       lastName: 'Trabajador',
-                       email: 'nuevo@empresa.com',
-                       birthDate: '1990-01-01',
-                       contractDate: '2024-01-01',
-                       baseSalary: 1200000,
-                       afp: 'Habitat',
-                       healthSystem: 'Isapre',
-                       costCenterId: 'CC01',
-                       position: 'Analista'
-                     };
-                     db.saveEmployee(newEmp);
-                     setEmployees([...employees, newEmp]);
-                   }}
-                   className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-600/30 hover:bg-indigo-700 transition-all transform active:scale-95"
-                >
-                  <Plus className="w-5 h-5" />
-                  Crear Trabajador
-                </button>
-              </div>
-
-              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="bg-slate-50/50 border-b border-slate-100">
-                      <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-widest">RUT</th>
-                      <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Nombre Completo</th>
-                      <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Cargo</th>
-                      <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-widest text-right">Sueldo Base</th>
-                      <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Estado</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {employees.map((emp) => (
-                      <tr key={emp.id} className="hover:bg-slate-50/80 transition-colors group">
-                        <td className="px-6 py-5 text-sm font-semibold text-slate-600">{emp.rut}</td>
-                        <td className="px-6 py-5">
-                          <div className="flex flex-col">
-                            <span className="text-sm font-bold text-slate-900">{emp.firstName} {emp.lastName}</span>
-                            <span className="text-xs text-slate-500">{emp.email}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-5">
-                          <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-xs font-bold">{emp.position}</span>
-                        </td>
-                        <td className="px-6 py-5 text-sm font-bold text-slate-900 text-right">
-                          ${emp.baseSalary.toLocaleString('es-CL')}
-                        </td>
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-1.5">
-                            <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
-                            <span className="text-xs font-bold text-emerald-600 uppercase">Activo</span>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {employees.length === 0 && (
-                      <tr>
-                        <td colSpan={5} className="px-6 py-20 text-center">
-                          <div className="flex flex-col items-center opacity-40">
-                            <Users className="w-12 h-12 mb-4" />
-                            <p className="text-sm font-medium">No hay trabajadores registrados en esta empresa.</p>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
           {activeTab === 'payroll' && (
-            <div className="animate-in slide-in-from-bottom-4 duration-500 max-w-4xl mx-auto">
-              <div className="bg-white p-12 rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100 text-center">
-                <div className="w-24 h-24 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-8">
+            <div className="animate-in slide-in-from-bottom-4 duration-500 max-w-4xl mx-auto py-12">
+              <div className="bg-white p-12 rounded-[3rem] shadow-2xl shadow-indigo-100/50 border border-slate-100 text-center relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-500 to-emerald-500"></div>
+                <div className="w-24 h-24 bg-indigo-50 rounded-3xl flex items-center justify-center mx-auto mb-8 rotate-3">
                   <Calculator className="w-12 h-12 text-indigo-600" />
                 </div>
-                <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-4">Cálculo de Proceso Mensual</h2>
-                <p className="text-slate-500 text-lg max-w-lg mx-auto mb-10">
-                  Ejecuta el procesamiento masivo de remuneraciones para el periodo de <span className="font-bold text-slate-900">Marzo 2024</span>. 
-                  Este proceso aplicará leyes sociales, descuentos y generará los resultados para la centralización contable.
+                <h2 className="text-4xl font-black text-slate-900 tracking-tight mb-4 uppercase">Proceso de Marzo 2024</h2>
+                <p className="text-slate-500 text-lg max-w-lg mx-auto mb-10 leading-relaxed font-medium">
+                  Ejecuta el procesamiento masivo de remuneraciones. Este módulo funciona <span className="text-emerald-600 font-bold">100% offline</span> garantizando la privacidad de tus datos.
                 </p>
                 
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                   <button 
                     onClick={runCalculation}
-                    className="w-full sm:w-auto px-10 py-5 bg-indigo-600 text-white rounded-2xl font-bold text-lg shadow-xl shadow-indigo-600/30 hover:bg-indigo-700 transition-all transform hover:-translate-y-1 active:scale-95"
+                    className="group w-full sm:w-auto px-12 py-5 bg-indigo-600 text-white rounded-[1.5rem] font-black text-lg shadow-2xl shadow-indigo-600/30 hover:bg-indigo-700 transition-all transform hover:-translate-y-1 active:scale-95 flex items-center gap-3"
                   >
-                    Iniciar Procesamiento
+                    Calcular Nómina
+                    <RefreshCw className="w-5 h-5 group-hover:rotate-180 transition-transform duration-500" />
                   </button>
                   <button 
                     disabled={payrollResults.length === 0}
                     onClick={exportToContabilidad}
-                    className={`w-full sm:w-auto px-10 py-5 bg-white text-slate-700 border-2 border-slate-200 rounded-2xl font-bold text-lg transition-all flex items-center justify-center gap-2 ${
-                      payrollResults.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:border-indigo-600 hover:text-indigo-600'
+                    className={`w-full sm:w-auto px-12 py-5 bg-white text-slate-700 border-2 border-slate-200 rounded-[1.5rem] font-black text-lg transition-all flex items-center justify-center gap-2 ${
+                      payrollResults.length === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:border-indigo-600 hover:text-indigo-600 shadow-xl'
                     }`}
                   >
                     <FileText className="w-6 h-6" />
-                    Centralizar a Contabilidad
+                    Exportar Centralización
                   </button>
                 </div>
-
-                {payrollResults.length > 0 && (
-                   <div className="mt-12 p-6 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-center gap-4 text-left">
-                     <div className="w-12 h-12 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                       <BarChart3 className="w-6 h-6 text-white" />
-                     </div>
-                     <div>
-                       <p className="text-emerald-800 font-bold">Último proceso finalizado</p>
-                       <p className="text-emerald-600 text-sm">{payrollResults.length} liquidaciones generadas exitosamente.</p>
-                     </div>
-                   </div>
-                )}
               </div>
             </div>
           )}
-
-          {activeTab === 'analytics' && (
-             <div className="space-y-8 animate-in zoom-in-95 duration-500">
-               <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Analítica Avanzada de Costos</h2>
-               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  <div className="lg:col-span-2 bg-white p-8 rounded-3xl shadow-sm border border-slate-200">
-                    <h3 className="text-lg font-bold text-slate-900 mb-6">Comparativa Costo Empresa vs Neto</h3>
-                    <div className="h-[400px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={[
-                          { name: 'Jan', costo: 12000, neto: 9500 },
-                          { name: 'Feb', costo: 12500, neto: 9800 },
-                          { name: 'Mar', costo: 14000, neto: 10500 },
-                          { name: 'Apr', costo: 13800, neto: 10200 },
-                        ]}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                          <XAxis dataKey="name" />
-                          <YAxis />
-                          <Tooltip />
-                          <Bar dataKey="costo" fill="#6366f1" radius={[4, 4, 0, 0]} />
-                          <Bar dataKey="neto" fill="#10b981" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                  <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 flex flex-col items-center justify-center">
-                    <PieChart className="w-16 h-16 text-slate-200 mb-6" />
-                    <p className="text-slate-400 text-sm font-medium text-center">Analíticas por Centro de Costos detalladas disponibles tras el cierre de periodo.</p>
+          
+          {activeTab === 'employees' && (
+            <div className="animate-in zoom-in-95 duration-300">
+               <div className="flex items-center justify-between mb-8">
+                 <h2 className="text-2xl font-black text-slate-900 uppercase">Personal Activo</h2>
+                 <button className="p-4 bg-emerald-500 text-white rounded-2xl shadow-lg shadow-emerald-500/30 hover:bg-emerald-400 transition-all font-bold text-sm flex items-center gap-2">
+                   <Plus className="w-5 h-5" />
+                   Ingresar Ficha
+                 </button>
+               </div>
+               <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
+                  <div className="p-20 text-center flex flex-col items-center opacity-30">
+                    <Users className="w-20 h-20 mb-4" />
+                    <p className="font-black uppercase tracking-widest text-sm">Base de datos local encriptada</p>
                   </div>
                </div>
-             </div>
+            </div>
           )}
         </div>
       </main>
