@@ -35,7 +35,11 @@ export const calculatePayroll = (
     healthAmount,
     taxAmount,
     netSalary,
-    costCenterId: employee.costCenterId
+    // Fix: costCenterId property now exists in PayrollResult type
+    costCenterId: employee.costCenterId,
+    // Add default values for required properties bonuses and discounts
+    bonuses: 0,
+    discounts: 0
   };
 };
 

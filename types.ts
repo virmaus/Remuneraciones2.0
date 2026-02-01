@@ -12,7 +12,6 @@ export interface Company {
   name: string;
   address: string;
   activityCode: string;
-  logo?: string;
 }
 
 export interface Employee {
@@ -22,24 +21,10 @@ export interface Employee {
   firstName: string;
   lastName: string;
   email: string;
-  birthDate: string;
-  contractDate: string;
   baseSalary: number;
-  afp: string;
-  healthSystem: string; // Isapre or Fonasa
-  healthPlanValue?: number; // In UF or %
-  isapreName?: string;
-  costCenterId: string;
   position: string;
-}
-
-export interface MonthlyParameters {
-  year: number;
-  month: number;
-  uf: number;
-  utm: number;
-  imm: number; // Ingreso Mínimo Mensual
-  sis: number; // Seguro Invalidez y Sobrevivencia %
+  costCenterId: string;
+  supervisorId?: string;
 }
 
 export interface PayrollResult {
@@ -54,17 +39,44 @@ export interface PayrollResult {
   taxAmount: number;
   netSalary: number;
   costCenterId: string;
+  bonuses: number;
+  discounts: number;
 }
 
-export interface AccountingVoucher {
+export interface MonthlyParameters {
   id: string;
-  date: string;
-  description: string;
-  type: 'INGRESO' | 'EGRESO' | 'TRASPASO';
-  items: {
-    accountCode: string;
-    debit: number;
-    credit: number;
-    costCenterId?: string;
-  }[];
+  year: number;
+  month: number;
+  uf: number;
+  utm: number;
+  imm: number;
+  sis: number;
+  isClosed: boolean;
+  lastFolio?: number;
+}
+
+export interface AccountingItem {
+  accountCode: string;
+  accountName: string;
+  debit: number;
+  credit: number;
+  costCenter: string;
+}
+
+export interface Loan {
+  id: string;
+  employeeId: string;
+  totalAmount: number;
+  remainingAmount: number;
+  installments: number;
+  monthlyAmount: number;
+  startDate: string;
+}
+
+export interface Vacation {
+  id: string;
+  employeeId: string;
+  startDate: string;
+  endDate: string;
+  daysTaken: number;
 }

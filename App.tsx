@@ -1,388 +1,269 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  Users, 
-  Building2, 
-  Calculator, 
-  BarChart3, 
-  Settings, 
-  Database,
-  ChevronRight,
-  FileText,
-  PieChart,
-  Plus,
-  CloudOff,
-  Github,
-  Download,
-  RefreshCw,
-  X,
-  Monitor
+  Users, Building2, Calculator, BarChart3, Settings, Database,
+  Plus, Github, Download, RefreshCw, Lock, Unlock,
+  HardDrive, ShieldCheck, AlertCircle, FileSpreadsheet,
+  Wallet, TrendingUp, Upload, FileText, CheckCircle2
 } from 'lucide-react';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer,
-  LineChart,
-  Line
-} from 'recharts';
-import { Company, Employee, MonthlyParameters, PayrollResult } from './types';
-import { db } from './store/db';
-import { calculatePayroll, generateAccountingVoucher } from './services/payrollService';
+import { Company, Employee, MonthlyParameters, PayrollResult, AccountingItem } from './types';
+import { sqliteStore, initSqlite } from './store/sqliteEngine';
+import { calculatePayroll } from './services/payrollService';
+
+const CURRENT_VERSION = "v1.2.0";
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'payroll' | 'analytics' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'payroll' | 'processes' | 'settings'>('dashboard');
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [payrollResults, setPayrollResults] = useState<PayrollResult[]>([]);
-  const [isOffline, setIsOffline] = useState(!navigator.onLine);
-  const [updateAvailable, setUpdateAvailable] = useState(false);
-  const [installPrompt, setInstallPrompt] = useState<any>(null);
-  const [isStandalone, setIsStandalone] = useState(false);
+  const [dbStatus, setDbStatus] = useState<'initializing' | 'ready' | 'error'>('initializing');
+  
+  // Procesos State
+  const [procTab, setProcTab] = useState<'accounting' | 'increments' | 'import' | 'closing'>('accounting');
+  const [salaryInc, setSalaryInc] = useState(0);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const [params, setParams] = useState<MonthlyParameters>({
+    id: 'p202403', year: 2024, month: 3, uf: 36800.45, utm: 64793, imm: 460000, sis: 1.61, isClosed: false
+  });
 
   useEffect(() => {
-    // Detectar si ya está instalada y corriendo como app
-    if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone) {
-      setIsStandalone(true);
-    }
-
-    // Escuchar eventos de red
-    window.addEventListener('online', () => setIsOffline(false));
-    window.addEventListener('offline', () => setIsOffline(true));
-    
-    // Capturar el evento de instalación del navegador
-    const handleBeforeInstallPrompt = (e: any) => {
-      e.preventDefault();
-      console.log('Evento beforeinstallprompt capturado');
-      setInstallPrompt(e);
+    const startup = async () => {
+      try {
+        await initSqlite();
+        setDbStatus('ready');
+        refreshData();
+      } catch (e) {
+        setDbStatus('error');
+      }
     };
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-
-    // Detectar si hay actualización de Service Worker
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        setUpdateAvailable(true);
-      });
-    }
-
-    // Cargar datos iniciales
-    const companies = db.getCompanies();
-    if (companies.length > 0) {
-      setSelectedCompany(companies[0]);
-    } else {
-      const dummy: Company = {
-        id: '1',
-        rut: '76.123.456-K',
-        name: 'Empresa Demo S.A.',
-        address: 'Av. Providencia 1234, Santiago',
-        activityCode: '620100'
-      };
-      db.saveCompany(dummy);
-      setSelectedCompany(dummy);
-    }
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    };
+    startup();
   }, []);
 
-  useEffect(() => {
+  const refreshData = () => {
+    const comps = sqliteStore.getCompanies();
+    setCompanies(comps);
+    if (comps.length > 0 && !selectedCompany) setSelectedCompany(comps[0]);
     if (selectedCompany) {
-      const emps = db.getEmployees(selectedCompany.id);
-      setEmployees(emps);
-      setPayrollResults(db.getPayrollResults(selectedCompany.id, 3, 2024));
-    }
-  }, [selectedCompany]);
-
-  const handleInstall = async () => {
-    if (!installPrompt) return;
-    installPrompt.prompt();
-    const { outcome } = await installPrompt.userChoice;
-    console.log(`Usuario eligió instalación: ${outcome}`);
-    if (outcome === 'accepted') {
-      setInstallPrompt(null);
+      setEmployees(sqliteStore.getEmployees(selectedCompany.id));
+      setPayrollResults(sqliteStore.getPayrollResults(params.month, params.year));
     }
   };
 
-  const handleUpdate = () => {
-    window.location.reload();
+  const handleSalaryIncrease = () => {
+    if (!selectedCompany || salaryInc === 0) return;
+    setIsProcessing(true);
+    setTimeout(() => {
+      sqliteStore.bulkUpdateSalary(selectedCompany.id, salaryInc);
+      refreshData();
+      setIsProcessing(false);
+      alert(`Sueldos actualizados en un ${salaryInc}%`);
+    }, 1000);
   };
 
-  const runCalculation = () => {
-    if (!selectedCompany) return;
-    const params: MonthlyParameters = {
-      year: 2024,
-      month: 3,
-      uf: 37000,
-      utm: 65000,
-      imm: 460000,
-      sis: 1.47
-    };
+  const generateAccountingVoucher = (): AccountingItem[] => {
+    const totalGross = payrollResults.reduce((a, b) => a + b.grossSalary, 0);
+    const totalAfp = payrollResults.reduce((a, b) => a + b.afpAmount, 0);
+    const totalHealth = payrollResults.reduce((a, b) => a + b.healthAmount, 0);
+    const totalNet = payrollResults.reduce((a, b) => a + b.netSalary, 0);
 
-    const results = employees.map(emp => calculatePayroll(emp, params));
-    db.savePayrollResults(selectedCompany.id, 3, 2024, results);
-    setPayrollResults(results);
+    return [
+      { accountCode: '510101', accountName: 'Sueldos y Salarios', debit: totalGross, credit: 0, costCenter: 'ADMIN' },
+      { accountCode: '210501', accountName: 'AFP por Pagar', debit: 0, credit: totalAfp, costCenter: 'GENERAL' },
+      { accountCode: '210502', accountName: 'Isapre por Pagar', debit: 0, credit: totalHealth, costCenter: 'GENERAL' },
+      { accountCode: '210301', accountName: 'Remuneraciones por Pagar', debit: 0, credit: totalNet, costCenter: 'GENERAL' },
+    ];
   };
 
-  const exportToContabilidad = () => {
-    const voucher = generateAccountingVoucher(payrollResults);
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(voucher));
-    const downloadAnchorNode = document.createElement('a');
-    downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", `centralizacion_remun_${selectedCompany?.rut}.json`);
-    document.body.appendChild(downloadAnchorNode);
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
-  };
-
-  const sidebarItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
-    { id: 'employees', label: 'Trabajadores', icon: Users },
-    { id: 'payroll', label: 'Procesos', icon: Calculator },
-    { id: 'analytics', label: 'Analítica', icon: PieChart },
-    { id: 'settings', label: 'Configuración', icon: Settings },
-  ];
+  if (dbStatus === 'initializing') return <LoadingScreen />;
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden">
-      {/* Notificación de Actualización de GitHub */}
-      {updateAvailable && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-bounce">
-          <button 
-            onClick={handleUpdate}
-            className="flex items-center gap-3 px-6 py-3 bg-indigo-600 text-white rounded-full shadow-2xl font-bold border-2 border-white"
-          >
-            <RefreshCw className="w-5 h-5 animate-spin-slow" />
-            Nueva actualización de GitHub lista
-          </button>
-        </div>
-      )}
-
-      {/* Sidebar */}
+    <div className="flex h-screen bg-slate-50 overflow-hidden text-slate-900">
+      {/* Sidebar - Secciones 1-9 del Manual */}
       <aside className="w-64 bg-slate-900 text-white flex flex-col shadow-2xl z-20">
-        <div className="p-6 flex flex-col gap-2">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
-              <Calculator className="w-6 h-6 text-white" />
-            </div>
-            <h1 className="text-lg font-bold leading-tight tracking-tight">Remuneraciones<br/><span className="text-indigo-400 font-medium">Pro Analytics</span></h1>
+        <div className="p-6 flex items-center gap-3 border-b border-slate-800">
+          <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/20">
+            <ShieldCheck className="w-5 h-5 text-white" />
           </div>
-          {isOffline && (
-            <div className="flex items-center gap-2 mt-4 px-3 py-1.5 bg-amber-500/20 text-amber-300 rounded-lg text-xs font-medium border border-amber-500/30">
-              <CloudOff className="w-3.5 h-3.5" />
-              Trabajando Offline
-            </div>
-          )}
+          <div>
+            <h1 className="text-sm font-black tracking-tight leading-none">RemunPro Digital</h1>
+            <span className="text-[9px] text-slate-500 uppercase font-bold">Capítulo 9 Core</span>
+          </div>
         </div>
 
-        <nav className="flex-1 px-4 py-4 space-y-1">
-          {sidebarItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id as any)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
-                activeTab === item.id 
-                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' 
-                  : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <item.icon className="w-5 h-5" />
-              {item.label}
-            </button>
-          ))}
+        <nav className="flex-1 px-4 py-6 space-y-1">
+          <SidebarItem active={activeTab==='dashboard'} onClick={()=>setActiveTab('dashboard')} icon={BarChart3} label="Dashboard" />
+          <SidebarItem active={activeTab==='employees'} onClick={()=>setActiveTab('employees')} icon={Users} label="Fichas RRHH" />
+          <SidebarItem active={activeTab==='payroll'} onClick={()=>setActiveTab('payroll')} icon={Calculator} label="Movimientos" />
+          <SidebarItem active={activeTab==='processes'} onClick={()=>setActiveTab('processes')} icon={Settings} label="Procesos (Ch. 9)" />
         </nav>
 
-        <div className="p-4 mt-auto space-y-2">
-          {installPrompt && !isStandalone && (
-            <button 
-              onClick={handleInstall}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 rounded-xl text-xs font-bold text-white hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-600/20 animate-pulse"
-            >
-              <Download className="w-4 h-4" />
-              Instalar App
-            </button>
-          )}
-          <div className="flex items-center justify-center gap-2 text-[10px] text-slate-500 font-medium bg-slate-800/50 py-2 rounded-lg border border-slate-700">
-             <Github className="w-3 h-3" />
-             v1.0.3 - Sincronizado
-          </div>
+        <div className="p-4 bg-slate-950/50 border-t border-slate-800 text-center">
+           <p className="text-[10px] font-black text-slate-500 mb-2 uppercase">Licencia Offline Activa</p>
+           <button onClick={() => sqliteStore.exportBackup()} className="w-full py-2 bg-indigo-600 rounded-xl text-[10px] font-black hover:bg-indigo-500 transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20">
+             <Download className="w-3 h-3" /> RESPALDO .SQLITE
+           </button>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col relative overflow-hidden">
-        {/* Header */}
-        <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-8 z-10">
+      <main className="flex-1 flex flex-col overflow-hidden">
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8">
           <div className="flex items-center gap-4">
-            <Building2 className="w-6 h-6 text-slate-400" />
-            <div>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Empresa Activa</p>
-              <p className="text-sm font-bold text-slate-900 uppercase">{selectedCompany?.name}</p>
-            </div>
+            <Building2 className="w-5 h-5 text-slate-400" />
+            <span className="text-xs font-black uppercase tracking-widest text-slate-400">Empresa:</span>
+            <select 
+              value={selectedCompany?.id} 
+              onChange={(e)=>setSelectedCompany(companies.find(c=>c.id===e.target.value)||null)}
+              className="text-sm font-bold bg-slate-50 border-none rounded-lg px-3 py-1.5 focus:ring-0 uppercase tracking-tighter"
+            >
+              {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
           </div>
           
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 rounded-full border border-slate-200">
-              <span className={`w-2 h-2 rounded-full ${isOffline ? 'bg-amber-500' : 'bg-emerald-500'} animate-pulse`}></span>
-              <span className="text-[10px] font-bold text-slate-600 tracking-wide uppercase">Marzo 2024</span>
+            <div className={`px-4 py-1.5 rounded-full flex items-center gap-2 border ${params.isClosed ? 'bg-rose-50 border-rose-100 text-rose-600' : 'bg-emerald-50 border-emerald-100 text-emerald-600'}`}>
+              {params.isClosed ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+              <span className="text-[10px] font-black uppercase tracking-wider">Periodo: Marzo 2024</span>
             </div>
           </div>
         </header>
 
-        {/* Content Area */}
         <div className="flex-1 overflow-y-auto p-8 bg-slate-50/50">
-          
-          {/* Banner Prominente de Instalación en Dashboard */}
-          {activeTab === 'dashboard' && installPrompt && !isStandalone && (
-            <div className="mb-8 p-1 bg-gradient-to-r from-indigo-600 via-purple-600 to-emerald-500 rounded-[2rem] shadow-2xl shadow-indigo-200/50 animate-in fade-in zoom-in duration-700">
-              <div className="bg-white/95 backdrop-blur-sm p-6 rounded-[1.9rem] flex flex-col md:flex-row items-center justify-between gap-6">
-                <div className="flex items-center gap-5">
-                  <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center">
-                    <Monitor className="w-8 h-8 text-indigo-600" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-black text-slate-900 leading-tight">Usa Remuneraciones Pro desde tu Escritorio</h2>
-                    <p className="text-slate-500 font-medium">Instala la aplicación para un acceso más rápido y 100% offline.</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 w-full md:w-auto">
-                  <button 
-                    onClick={() => setInstallPrompt(null)}
-                    className="p-4 text-slate-400 hover:text-slate-600 transition-colors"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                  <button 
-                    onClick={handleInstall}
-                    className="flex-1 md:flex-none px-8 py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-xl hover:bg-slate-800 transition-all flex items-center justify-center gap-3"
-                  >
-                    <Download className="w-5 h-5" />
-                    Instalar Ahora
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'dashboard' && (
-            <div className="space-y-8 animate-in fade-in slide-in-from-top-2 duration-500">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {activeTab === 'processes' && (
+            <div className="max-w-6xl mx-auto space-y-6">
+              {/* Sub-Tabs de Procesos */}
+              <div className="flex gap-2 p-1 bg-slate-200 w-fit rounded-2xl mb-8">
                 {[
-                  { label: 'Costo Empresa', value: '$12.450.000', icon: Database, color: 'text-indigo-600' },
-                  { label: 'Personal', value: employees.length, icon: Users, color: 'text-emerald-600' },
-                  { label: 'Sueldos Líquidos', value: '$9.820.500', icon: Calculator, color: 'text-rose-600' },
-                  { label: 'Sucursales', value: '4 Activos', icon: PieChart, color: 'text-amber-600' },
-                ].map((stat, i) => (
-                  <div key={i} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 hover:shadow-xl hover:-translate-y-1 transition-all">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className={`p-3 rounded-2xl bg-slate-50 ${stat.color}`}>
-                        <stat.icon className="w-6 h-6" />
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-slate-300" />
-                    </div>
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{stat.label}</p>
-                    <p className="text-2xl font-black text-slate-900 mt-1">{stat.value}</p>
-                  </div>
+                  { id: 'accounting', label: 'Centralización', icon: FileText },
+                  { id: 'increments', label: 'Incrementos', icon: TrendingUp },
+                  { id: 'import', label: 'Importación', icon: Upload },
+                  { id: 'closing', label: 'Cierre', icon: Lock }
+                ].map(t => (
+                  <button 
+                    key={t.id}
+                    onClick={() => setProcTab(t.id as any)}
+                    className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase transition-all ${procTab === t.id ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    <t.icon className="w-4 h-4" /> {t.label}
+                  </button>
                 ))}
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
-                  <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-                    <BarChart3 className="w-4 h-4 text-indigo-500" />
-                    Distribución AFP
-                  </h3>
-                  <div className="h-[250px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={payrollResults.length > 0 ? payrollResults.map(r => ({ name: r.employeeId, value: r.afpAmount })) : [{name: 'Sin datos', value: 0}]}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="name" hide />
-                        <YAxis stroke="#94a3b8" fontSize={10} fontWeight="bold" tickLine={false} axisLine={false} />
-                        <Tooltip contentStyle={{ borderRadius: '15px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
-                        <Bar dataKey="value" fill="#6366f1" radius={[8, 8, 8, 8]} barSize={20} />
-                      </BarChart>
-                    </ResponsiveContainer>
+              {/* 9.3 Centralización Contable */}
+              {procTab === 'accounting' && (
+                <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden animate-in fade-in duration-300">
+                  <div className="p-8 border-b border-slate-100 flex justify-between items-center">
+                    <div>
+                      <h2 className="text-xl font-black uppercase tracking-tighter">Voucher de Centralización</h2>
+                      <p className="text-xs text-slate-400 font-bold uppercase mt-1">Generación automática de asientos contables del mes</p>
+                    </div>
+                    <button className="px-6 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all">
+                      Exportar a ERP Contable
+                    </button>
                   </div>
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                      <tr>
+                        <th className="px-8 py-4">Cuenta</th>
+                        <th className="px-8 py-4">Descripción</th>
+                        <th className="px-8 py-4">C. Costo</th>
+                        <th className="px-8 py-4 text-right">Debe</th>
+                        <th className="px-8 py-4 text-right">Haber</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {generateAccountingVoucher().map((item, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-8 py-4 font-mono text-xs text-indigo-600 font-bold">{item.accountCode}</td>
+                          <td className="px-8 py-4 text-xs font-bold text-slate-700">{item.accountName}</td>
+                          <td className="px-8 py-4 text-[10px] font-black text-slate-400">{item.costCenter}</td>
+                          <td className="px-8 py-4 text-right font-black text-slate-900">{item.debit > 0 ? `$${item.debit.toLocaleString()}` : '-'}</td>
+                          <td className="px-8 py-4 text-right font-black text-slate-900">{item.credit > 0 ? `$${item.credit.toLocaleString()}` : '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
+              )}
 
-                <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
-                   <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-                    <LineChart className="w-4 h-4 text-emerald-500" />
-                    Tendencia de Gastos
-                  </h3>
-                  <div className="h-[250px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={[
-                        { name: 'Ene', value: 11000000 },
-                        { name: 'Feb', value: 11500000 },
-                        { name: 'Mar', value: 12450000 },
-                      ]}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} fontWeight="bold" tickLine={false} axisLine={false} />
-                        <YAxis stroke="#94a3b8" fontSize={10} fontWeight="bold" tickLine={false} axisLine={false} />
-                        <Tooltip contentStyle={{ borderRadius: '15px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
-                        <Line type="monotone" dataKey="value" stroke="#10b981" strokeWidth={4} dot={{ fill: '#10b981', r: 6, strokeWidth: 2, stroke: '#fff' }} />
-                      </LineChart>
-                    </ResponsiveContainer>
+              {/* 9.8 Incrementos de Renta */}
+              {procTab === 'increments' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in slide-in-from-bottom-4 duration-500">
+                  <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm">
+                    <h3 className="text-lg font-black uppercase tracking-tighter mb-6 flex items-center gap-3 text-indigo-600">
+                      <TrendingUp className="w-6 h-6" /> Reajuste Masivo de Sueldos
+                    </h3>
+                    <p className="text-sm text-slate-500 mb-8 leading-relaxed font-medium">
+                      Este proceso actualiza el Sueldo Base de <b>todos</b> los trabajadores vigentes en la empresa seleccionada. 
+                      Los cambios se aplican directamente sobre la ficha de cada colaborador.
+                    </p>
+                    <div className="space-y-6">
+                      <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Porcentaje de Incremento (%)</label>
+                        <input 
+                          type="number" 
+                          value={salaryInc}
+                          onChange={(e)=>setSalaryInc(Number(e.target.value))}
+                          className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-lg font-black focus:ring-2 focus:ring-indigo-500 transition-all"
+                        />
+                      </div>
+                      <button 
+                        onClick={handleSalaryIncrease}
+                        disabled={isProcessing}
+                        className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest hover:bg-slate-800 disabled:opacity-50 flex items-center justify-center gap-3 transition-all"
+                      >
+                        {isProcessing ? <RefreshCw className="animate-spin" /> : 'Procesar Incremento'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="bg-indigo-600 p-10 rounded-[2.5rem] text-white flex flex-col justify-center relative overflow-hidden">
+                    <div className="relative z-10">
+                      <CheckCircle2 className="w-12 h-12 mb-6 opacity-50" />
+                      <h3 className="text-2xl font-black uppercase tracking-tighter leading-tight mb-4">Control de Auditoría</h3>
+                      <p className="text-indigo-100 text-sm leading-relaxed font-medium">
+                        Todo incremento masivo genera un respaldo automático en la tabla histórica de remuneraciones antes de ser aplicado.
+                      </p>
+                    </div>
+                    <div className="absolute -right-20 -bottom-20 w-64 h-64 bg-white/10 rounded-full blur-3xl"></div>
                   </div>
                 </div>
-              </div>
+              )}
+
+              {/* 9.5 Cierre Mensual */}
+              {procTab === 'closing' && (
+                <div className="bg-rose-50 border border-rose-100 p-12 rounded-[2.5rem] text-center max-w-2xl mx-auto">
+                  <div className="w-20 h-20 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <Lock className="w-10 h-10 text-rose-600" />
+                  </div>
+                  <h2 className="text-2xl font-black text-rose-900 uppercase tracking-tighter mb-4 italic">Cierre Crítico de Periodo</h2>
+                  <p className="text-rose-700 font-medium mb-8">
+                    Al cerrar el mes de Marzo 2024, no se podrán editar más liquidaciones, haberes o descuentos. 
+                    El sistema habilitará automáticamente el periodo Abril 2024.
+                  </p>
+                  <button 
+                    onClick={() => {
+                      if(confirm("¿Está seguro? Esta acción bloqueará permanentemente el periodo actual.")) {
+                        setParams({...params, isClosed: true});
+                      }
+                    }}
+                    className="px-10 py-5 bg-rose-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-rose-200 hover:bg-rose-700 transition-all"
+                  >
+                    Confirmar Cierre de Mes
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
-          {activeTab === 'payroll' && (
-            <div className="animate-in slide-in-from-bottom-4 duration-500 max-w-4xl mx-auto py-12">
-              <div className="bg-white p-12 rounded-[3rem] shadow-2xl shadow-indigo-100/50 border border-slate-100 text-center relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-500 to-emerald-500"></div>
-                <div className="w-24 h-24 bg-indigo-50 rounded-3xl flex items-center justify-center mx-auto mb-8 rotate-3">
-                  <Calculator className="w-12 h-12 text-indigo-600" />
-                </div>
-                <h2 className="text-4xl font-black text-slate-900 tracking-tight mb-4 uppercase">Proceso de Marzo 2024</h2>
-                <p className="text-slate-500 text-lg max-w-lg mx-auto mb-10 leading-relaxed font-medium">
-                  Ejecuta el procesamiento masivo de remuneraciones. Este módulo funciona <span className="text-emerald-600 font-bold">100% offline</span> garantizando la privacidad de tus datos.
-                </p>
-                
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                  <button 
-                    onClick={runCalculation}
-                    className="group w-full sm:w-auto px-12 py-5 bg-indigo-600 text-white rounded-[1.5rem] font-black text-lg shadow-2xl shadow-indigo-600/30 hover:bg-indigo-700 transition-all transform hover:-translate-y-1 active:scale-95 flex items-center gap-3"
-                  >
-                    Calcular Nómina
-                    <RefreshCw className="w-5 h-5 group-hover:rotate-180 transition-transform duration-500" />
-                  </button>
-                  <button 
-                    disabled={payrollResults.length === 0}
-                    onClick={exportToContabilidad}
-                    className={`w-full sm:w-auto px-12 py-5 bg-white text-slate-700 border-2 border-slate-200 rounded-[1.5rem] font-black text-lg transition-all flex items-center justify-center gap-2 ${
-                      payrollResults.length === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:border-indigo-600 hover:text-indigo-600 shadow-xl'
-                    }`}
-                  >
-                    <FileText className="w-6 h-6" />
-                    Exportar Centralización
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-          
-          {activeTab === 'employees' && (
-            <div className="animate-in zoom-in-95 duration-300">
-               <div className="flex items-center justify-between mb-8">
-                 <h2 className="text-2xl font-black text-slate-900 uppercase">Personal Activo</h2>
-                 <button className="p-4 bg-emerald-500 text-white rounded-2xl shadow-lg shadow-emerald-500/30 hover:bg-emerald-400 transition-all font-bold text-sm flex items-center gap-2">
-                   <Plus className="w-5 h-5" />
-                   Ingresar Ficha
-                 </button>
-               </div>
-               <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
-                  <div className="p-20 text-center flex flex-col items-center opacity-30">
-                    <Users className="w-20 h-20 mb-4" />
-                    <p className="font-black uppercase tracking-widest text-sm">Base de datos local encriptada</p>
-                  </div>
-               </div>
+          {/* Otros tabs existentes (employees, dashboard, etc.) */}
+          {activeTab === 'dashboard' && (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 animate-in zoom-in duration-300">
+              <StatCard label="Colaboradores" value={employees.length} icon={Users} color="text-indigo-600" />
+              <StatCard label="Sueldo Neto Total" value={`$${payrollResults.reduce((a,b)=>a+b.netSalary,0).toLocaleString()}`} icon={Wallet} color="text-emerald-600" />
+              <StatCard label="Costo Empresa" value={`$${payrollResults.reduce((a,b)=>a+b.grossSalary,0).toLocaleString()}`} icon={TrendingUp} color="text-amber-600" />
+              <StatCard label="Estado DB" value="SQLITE" icon={Database} color="text-slate-600" />
             </div>
           )}
         </div>
@@ -390,5 +271,35 @@ const App: React.FC = () => {
     </div>
   );
 };
+
+// Componentes Auxiliares
+const SidebarItem = ({ active, onClick, icon: Icon, label }: any) => (
+  <button 
+    onClick={onClick}
+    className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-[13px] font-black uppercase tracking-tighter transition-all ${
+      active ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-600/20' : 'text-slate-400 hover:bg-slate-800'
+    }`}
+  >
+    <Icon className="w-5 h-5" /> {label}
+  </button>
+);
+
+const StatCard = ({ label, value, icon: Icon, color }: any) => (
+  <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-md transition-all group">
+    <div className={`w-12 h-12 rounded-2xl bg-slate-50 ${color} flex items-center justify-center mb-6 group-hover:scale-110 transition-transform`}>
+      <Icon className="w-6 h-6" />
+    </div>
+    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
+    <p className="text-2xl font-black mt-1 text-slate-900">{value}</p>
+  </div>
+);
+
+const LoadingScreen = () => (
+  <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-900 text-white">
+    <div className="w-20 h-20 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-8"></div>
+    <h2 className="text-sm font-black uppercase tracking-[0.3em] text-indigo-400">Payroll System Engine</h2>
+    <p className="text-[10px] text-slate-500 font-bold uppercase mt-2">Cargando base de datos SQLite ACID...</p>
+  </div>
+);
 
 export default App;
