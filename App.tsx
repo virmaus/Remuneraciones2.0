@@ -4,13 +4,18 @@ import {
   Users, Building2, Calculator, BarChart3, Settings, Database,
   Plus, Github, Download, RefreshCw, Lock, Unlock,
   HardDrive, ShieldCheck, AlertCircle, FileSpreadsheet,
-  Wallet, TrendingUp, Upload, FileText, CheckCircle2, Save, UserPlus
+  Wallet, TrendingUp, Upload, FileText, CheckCircle2, Save, UserPlus,
+  Calendar
 } from 'lucide-react';
 import { Company, Employee, MonthlyParameters, PayrollResult, AccountingItem } from './types';
 import { sqliteStore, initSqlite } from './store/sqliteEngine';
 import { calculatePayroll } from './services/payrollService';
 
-const CURRENT_VERSION = "v1.2.1";
+const CURRENT_VERSION = "v1.2.2";
+const MONTHS = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+];
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'payroll' | 'processes' | 'settings'>('dashboard');
@@ -26,8 +31,9 @@ const App: React.FC = () => {
   const [salaryInc, setSalaryInc] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Parámetros del Periodo (Controlable)
   const [params, setParams] = useState<MonthlyParameters>({
-    id: 'p202403', year: 2024, month: 3, uf: 36800.45, utm: 64793, imm: 460000, sis: 1.61, isClosed: false
+    id: 'p-current', year: 2024, month: 3, uf: 36800.45, utm: 64793, imm: 460000, sis: 1.61, isClosed: false
   });
 
   // Inicialización de DB
@@ -52,12 +58,14 @@ const App: React.FC = () => {
     }
   };
 
-  // Carga de datos dependientes de la empresa seleccionada
+  // Sincronización automática al cambiar Empresa, Mes o Año
   useEffect(() => {
     if (selectedCompany) {
       const emps = sqliteStore.getEmployees(selectedCompany.id);
       setEmployees(emps);
-      setPayrollResults(sqliteStore.getPayrollResults(params.month, params.year));
+      // Cargar resultados específicos del periodo seleccionado
+      const results = sqliteStore.getPayrollResults(params.month, params.year);
+      setPayrollResults(results);
     } else {
       setEmployees([]);
       setPayrollResults([]);
@@ -143,8 +151,34 @@ const App: React.FC = () => {
               {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
-          <div className={`px-4 py-1.5 rounded-full flex items-center gap-2 border ${params.isClosed ? 'bg-rose-50 border-rose-100 text-rose-600' : 'bg-emerald-50 border-emerald-100 text-emerald-600'}`}>
-            <span className="text-[10px] font-black uppercase tracking-wider">Marzo 2024</span>
+          
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1 border border-slate-200">
+              {/* Selector de Mes */}
+              <select 
+                value={params.month}
+                onChange={(e) => setParams({...params, month: Number(e.target.value)})}
+                className="bg-transparent border-none text-[11px] font-black uppercase tracking-widest focus:ring-0 cursor-pointer px-3"
+              >
+                {MONTHS.map((m, idx) => <option key={idx} value={idx + 1}>{m}</option>)}
+              </select>
+              
+              {/* Selector de Año */}
+              <select 
+                value={params.year}
+                onChange={(e) => setParams({...params, year: Number(e.target.value)})}
+                className="bg-transparent border-none text-[11px] font-black focus:ring-0 cursor-pointer px-3 border-l border-slate-200"
+              >
+                {[2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+
+            <div className={`px-4 py-1.5 rounded-full flex items-center gap-2 border ${params.isClosed ? 'bg-rose-50 border-rose-100 text-rose-600' : 'bg-emerald-50 border-emerald-100 text-emerald-600'}`}>
+              {params.isClosed ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+              <span className="text-[10px] font-black uppercase tracking-wider">
+                {params.isClosed ? 'CERRADO' : 'ABIERTO'}
+              </span>
+            </div>
           </div>
         </header>
 
@@ -167,7 +201,7 @@ const App: React.FC = () => {
                   <StatCard label="Colaboradores" value={employees.length} icon={Users} color="text-indigo-600" />
                   <StatCard label="Sueldo Neto" value={`$${payrollResults.reduce((a,b)=>a+b.netSalary,0).toLocaleString()}`} icon={Wallet} color="text-emerald-600" />
                   <StatCard label="Costo Empresa" value={`$${payrollResults.reduce((a,b)=>a+b.grossSalary,0).toLocaleString()}`} icon={TrendingUp} color="text-amber-600" />
-                  <StatCard label="Estado SQL" value="READY" icon={Database} color="text-slate-600" />
+                  <StatCard label="Periodo Activo" value={`${MONTHS[params.month-1].toUpperCase()} ${params.year}`} icon={Calendar} color="text-slate-600" />
                 </div>
               )}
 
@@ -246,9 +280,9 @@ const App: React.FC = () => {
                   </div>
                   {procTab === 'accounting' && (
                     <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden animate-in fade-in">
-                       <div className="p-8 border-b border-slate-100 flex justify-between">
-                         <h2 className="text-xl font-black uppercase tracking-tighter italic">Voucher de Centralización</h2>
-                         <button className="px-6 py-3 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Descargar PDF</button>
+                       <div className="p-8 border-b border-slate-100 flex justify-between items-center">
+                         <h2 className="text-xl font-black uppercase tracking-tighter italic">Voucher de Centralización - {MONTHS[params.month-1]} {params.year}</h2>
+                         <button className="px-6 py-3 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Exportar XLS</button>
                        </div>
                        <table className="w-full text-left">
                          <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
@@ -266,7 +300,7 @@ const App: React.FC = () => {
                     <div className="max-w-xl mx-auto bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm text-center">
                       <TrendingUp className="w-12 h-12 text-indigo-600 mx-auto mb-6" />
                       <h2 className="text-2xl font-black uppercase tracking-tighter mb-2">Reajuste Masivo</h2>
-                      <p className="text-slate-500 mb-8 font-medium">Actualiza el sueldo base de todos los trabajadores vigentes.</p>
+                      <p className="text-slate-500 mb-8 font-medium">Actualiza el sueldo base de todos los trabajadores para {params.year}.</p>
                       <input type="number" value={salaryInc} onChange={e=>setSalaryInc(Number(e.target.value))} className="w-full px-6 py-5 bg-slate-50 border-none rounded-2xl text-2xl font-black text-center focus:ring-2 focus:ring-indigo-500 mb-6" />
                       <button onClick={handleSalaryIncrease} disabled={isProcessing} className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-3">
                         {isProcessing ? <RefreshCw className="animate-spin" /> : 'Procesar Incremento'}
