@@ -24,7 +24,6 @@ const createTables = () => {
     CREATE TABLE IF NOT EXISTS employees (id TEXT PRIMARY KEY, companyId TEXT, rut TEXT, firstName TEXT, lastName TEXT, email TEXT, baseSalary REAL, position TEXT, costCenterId TEXT, supervisorId TEXT);
     CREATE TABLE IF NOT EXISTS payroll_results (id TEXT PRIMARY KEY, employeeId TEXT, month INTEGER, year INTEGER, grossSalary REAL, taxableSalary REAL, afpAmount REAL, healthAmount REAL, taxAmount REAL, netSalary REAL, costCenterId TEXT, bonuses REAL, discounts REAL);
     CREATE TABLE IF NOT EXISTS monthly_parameters (id TEXT PRIMARY KEY, year INTEGER, month INTEGER, uf REAL, utm REAL, imm REAL, sis REAL, isClosed INTEGER, lastFolio INTEGER);
-    CREATE TABLE IF NOT EXISTS loans (id TEXT PRIMARY KEY, employeeId TEXT, totalAmount REAL, remainingAmount REAL, installments INTEGER, monthlyAmount REAL, startDate TEXT);
   `);
   persistDb();
 };
@@ -45,29 +44,52 @@ export const sqliteStore = {
     return res.length > 0 ? res[0].values.map((v: any) => ({ id: v[0], rut: v[1], name: v[2], address: v[3], activityCode: v[4] })) : [];
   },
   saveEmployee: (e: Employee) => {
-    db.run("INSERT OR REPLACE INTO employees VALUES (?,?,?,?,?,?,?,?,?,?)", [e.id, e.companyId, e.rut, e.firstName, e.lastName, e.email, e.baseSalary, e.position, e.costCenterId, e.supervisorId || '']);
+    db.run("INSERT OR REPLACE INTO employees VALUES (?,?,?,?,?,?,?,?,?,?)", [
+      e.id, 
+      e.companyId, 
+      e.rut, 
+      e.firstName, 
+      e.lastName, 
+      e.email || '', 
+      e.baseSalary, 
+      e.position, 
+      e.costCenterId, 
+      e.supervisorId || ''
+    ]);
     persistDb();
   },
   getEmployees: (companyId: string): Employee[] => {
-    const res = db.exec(`SELECT * FROM employees WHERE companyId = '${companyId}'`);
-    return res.length > 0 ? res[0].values.map((v: any) => ({ id: v[0], companyId: v[1], rut: v[2], firstName: v[3], lastName: v[4], email: v[5], baseSalary: v[6], position: v[7], costCenterId: v[8], supervisorId: v[9] })) : [];
-  },
-  bulkUpdateSalary: (companyId: string, percentage: number) => {
-    const factor = 1 + (percentage / 100);
-    db.run(`UPDATE employees SET baseSalary = baseSalary * ? WHERE companyId = ?`, [factor, companyId]);
-    persistDb();
+    const stmt = db.prepare("SELECT * FROM employees WHERE companyId = ?");
+    stmt.bind([companyId]);
+    const results = [];
+    while (stmt.step()) {
+      const v = stmt.get();
+      results.push({ 
+        id: v[0], companyId: v[1], rut: v[2], firstName: v[3], lastName: v[4], 
+        email: v[5], baseSalary: v[6], position: v[7], costCenterId: v[8], supervisorId: v[9] 
+      });
+    }
+    stmt.free();
+    return results;
   },
   savePayrollResult: (r: PayrollResult) => {
     db.run("INSERT OR REPLACE INTO payroll_results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", [r.id, r.employeeId, r.month, r.year, r.grossSalary, r.taxableSalary, r.afpAmount, r.healthAmount, r.taxAmount, r.netSalary, r.costCenterId, r.bonuses, r.discounts]);
     persistDb();
   },
   getPayrollResults: (month: number, year: number): PayrollResult[] => {
-    const res = db.exec(`SELECT * FROM payroll_results WHERE month = ${month} AND year = ${year}`);
-    return res.length > 0 ? res[0].values.map((v: any) => ({ id: v[0], employeeId: v[1], month: v[2], year: v[3], grossSalary: v[4], taxableSalary: v[5], afpAmount: v[6], healthAmount: v[7], taxAmount: v[8], netSalary: v[9], costCenterId: v[10], bonuses: v[11], discounts: v[12] })) : [];
-  },
-  clearResults: (year: number) => {
-    db.run(`DELETE FROM payroll_results WHERE year = ?`, [year]);
-    persistDb();
+    const stmt = db.prepare("SELECT * FROM payroll_results WHERE month = ? AND year = ?");
+    stmt.bind([month, year]);
+    const results = [];
+    while (stmt.step()) {
+      const v = stmt.get();
+      results.push({ 
+        id: v[0], employeeId: v[1], month: v[2], year: v[3], grossSalary: v[4], 
+        taxableSalary: v[5], afpAmount: v[6], healthAmount: v[7], taxAmount: v[8], 
+        netSalary: v[9], costCenterId: v[10], bonuses: v[11], discounts: v[12] 
+      });
+    }
+    stmt.free();
+    return results;
   },
   exportBackup: () => {
     const data = db.export();
