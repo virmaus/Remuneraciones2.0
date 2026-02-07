@@ -26,6 +26,10 @@ const createTables = () => {
       baseSalary REAL, position TEXT, costCenterId TEXT, supervisorId TEXT, startDate TEXT, 
       contractType TEXT, afpName TEXT, healthName TEXT, isActive INTEGER, bankData TEXT
     );
+    CREATE TABLE IF NOT EXISTS loans (
+      id TEXT PRIMARY KEY, employeeId TEXT, totalAmount REAL, monthlyAmount REAL, 
+      remainingAmount REAL, installments INTEGER, paidInstallments INTEGER
+    );
     CREATE TABLE IF NOT EXISTS api_logs (
       id TEXT PRIMARY KEY, timestamp TEXT, endpoint TEXT, status TEXT, message TEXT
     );
@@ -57,8 +61,10 @@ export const sqliteStore = {
     persistDb();
   },
   getCompanies: (): Company[] => {
-    const res = db.exec("SELECT * FROM companies");
-    return res.length > 0 ? res[0].values.map((v: any) => ({ id: v[0], rut: v[1], name: v[2], address: v[3], activityCode: v[4], apiKey: v[5] })) : [];
+    try {
+      const res = db.exec("SELECT * FROM companies");
+      return res.length > 0 ? res[0].values.map((v: any) => ({ id: v[0], rut: v[1], name: v[2], address: v[3], activityCode: v[4], apiKey: v[5] })) : [];
+    } catch (e) { return []; }
   },
   saveEmployee: (e: Employee) => {
     const bankDataStr = e.bankData ? JSON.stringify(e.bankData) : null;
@@ -85,13 +91,30 @@ export const sqliteStore = {
     stmt.free();
     return results;
   },
+  saveLoan: (l: Loan) => {
+    db.run("INSERT OR REPLACE INTO loans VALUES (?,?,?,?,?,?,?)", [l.id, l.employeeId, l.totalAmount, l.monthlyAmount, l.remainingAmount, l.installments, l.paidInstallments]);
+    persistDb();
+  },
+  getLoans: (employeeId: string): Loan[] => {
+    const stmt = db.prepare("SELECT * FROM loans WHERE employeeId = ?");
+    stmt.bind([employeeId]);
+    const results = [];
+    while (stmt.step()) {
+      const v = stmt.get();
+      results.push({ id: v[0], employeeId: v[1], totalAmount: v[2], monthlyAmount: v[3], remainingAmount: v[4], installments: v[5], paidInstallments: v[6] });
+    }
+    stmt.free();
+    return results;
+  },
   saveApiLog: (log: ApiLog) => {
     db.run("INSERT OR REPLACE INTO api_logs VALUES (?,?,?,?,?)", [log.id, log.timestamp, log.endpoint, log.status, log.message]);
     persistDb();
   },
   getApiLogs: (): ApiLog[] => {
-    const res = db.exec("SELECT * FROM api_logs ORDER BY timestamp DESC LIMIT 50");
-    return res.length > 0 ? res[0].values.map((v: any) => ({ id: v[0], timestamp: v[1], endpoint: v[2], status: v[3], message: v[4] })) : [];
+    try {
+      const res = db.exec("SELECT * FROM api_logs ORDER BY timestamp DESC LIMIT 50");
+      return res.length > 0 ? res[0].values.map((v: any) => ({ id: v[0], timestamp: v[1], endpoint: v[2], status: v[3], message: v[4] })) : [];
+    } catch (e) { return []; }
   },
   saveDocument: (doc: LaborDocument) => {
     db.run("INSERT OR REPLACE INTO documents VALUES (?,?,?,?,?,?,?)", [doc.id, doc.employeeId, doc.type, doc.issueDate, doc.period, doc.verificationCode, doc.status]);
@@ -109,7 +132,6 @@ export const sqliteStore = {
     stmt.free();
     return results;
   },
-  getLoans: (employeeId: string) => [], // Simplificado para el ejemplo Cap 9
   savePayrollResult: (r: PayrollResult) => {
     db.run("INSERT OR REPLACE INTO payroll_results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
       r.id, r.employeeId, r.month, r.year, r.grossSalary, r.taxableSalary, r.legalGratification,
@@ -141,9 +163,7 @@ export const sqliteStore = {
   },
   getMonthlyParameters: (month: number, year: number): MonthlyParameters | null => {
     const id = `${year}-${month}`;
-    // Fix: define missing query variable
-    const query = "SELECT * FROM monthly_parameters WHERE id = ?";
-    const stmt = db.prepare(query);
+    const stmt = db.prepare("SELECT * FROM monthly_parameters WHERE id = ?");
     stmt.bind([id]);
     let result = null;
     if (stmt.step()) {
@@ -162,7 +182,7 @@ export const sqliteStore = {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `remun_pro_v9_${new Date().getTime()}.sqlite`;
+    a.download = `remun_pro_v95_${new Date().toISOString().split('T')[0]}.sqlite`;
     a.click();
   }
 };
