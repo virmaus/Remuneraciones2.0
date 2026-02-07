@@ -1,50 +1,32 @@
 
-export enum MovementType {
-  NORMAL = 'NORMAL',
-  LICENSE = 'LICENSE',
-  PERMIT = 'PERMIT',
-  FINIQUITO = 'FINIQUITO'
+export enum ModuleType {
+  ARCHIVO = 'ARCHIVO',
+  MOVIMIENTOS = 'MOVIMIENTOS',
+  LIQUIDACIONES = 'LIQUIDACIONES',
+  RRHH = 'RRHH',
+  FINIQUITOS = 'FINIQUITOS',
+  PROCESOS = 'PROCESOS',
+  DASHBOARD = 'DASHBOARD'
 }
 
-export enum ContractType {
-  INDEFINITE = 'Indefinido',
-  FIXED_TERM = 'Plazo Fijo',
-  PROJECT = 'Por Obra o Faena'
-}
-
-export enum DocumentType {
-  PAYSLIP = 'Liquidación de Sueldo',
-  CONTRACT = 'Contrato de Trabajo',
-  CERTIFICATE_TENURE = 'Certificado de Antigüedad',
-  CERTIFICATE_INCOME = 'Certificado de Renta',
-  FINIQUITO = 'Finiquito'
-}
-
-export interface LaborDocument {
+export interface WorkerVacation {
   id: string;
-  employeeId: string;
-  type: DocumentType;
-  issueDate: string;
-  period: string;
-  verificationCode: string;
-  status: 'SIGNED' | 'DRAFT';
+  workerId: string;
+  startDate: string;
+  endDate: string;
+  daysTaken: number;
+  status: 'SOLICITADO' | 'APROBADO' | 'RECHAZADO';
 }
 
-export interface ApiLog {
+export interface HR_Evaluation {
   id: string;
-  timestamp: string;
-  endpoint: string;
-  status: 'SUCCESS' | 'ERROR' | 'PENDING';
-  message: string;
+  workerId: string;
+  date: string;
+  score: number;
+  comments: string;
+  type: 'CUANTITATIVA' | 'CUALITATIVA';
 }
 
-export interface BankData {
-  bankName: string;
-  accountType: 'Vista' | 'Corriente' | 'Ahorro';
-  accountNumber: string;
-}
-
-// Added missing Loan interface
 export interface Loan {
   id: string;
   employeeId: string;
@@ -55,25 +37,45 @@ export interface Loan {
   paidInstallments: number;
 }
 
+export interface LaborDocument {
+  id: string;
+  employeeId: string;
+  type: string;
+  issueDate: string;
+  period: string;
+  verificationCode: string;
+  status: string;
+}
+
+export interface ApiLog {
+  id: string;
+  timestamp: string;
+  endpoint: string;
+  status: string;
+  message: string;
+}
+
 export interface Employee {
   id: string;
   companyId: string;
   rut: string;
   firstName: string;
   lastName: string;
-  email: string;
+  email?: string;
   baseSalary: number;
   position: string;
   costCenterId: string;
-  supervisorId?: string;
   startDate: string;
-  contractType: ContractType;
+  contractType: string;
   afpName: string;
   healthName: string;
-  healthPlanValue?: number;
   isActive: boolean;
-  bankData?: BankData; // Cap 9.2
+  vacationDaysRemaining: number;
+  syncStatus: 'SYNCED' | 'PENDING';
+  supervisorId?: string;
+  bankData?: any;
   terminationDate?: string;
+  terminationCause?: string;
 }
 
 export interface PayrollResult {
@@ -84,11 +86,12 @@ export interface PayrollResult {
   grossSalary: number;
   taxableSalary: number;
   legalGratification: number;
+  taxAmount: number;
+  netSalary: number;
+  isClosed: boolean;
   afpAmount: number;
   healthAmount: number;
-  taxAmount: number;
   loanDeduction: number;
-  netSalary: number;
   costCenterId: string;
   bonuses: number;
   discounts: number;
@@ -112,5 +115,24 @@ export interface Company {
   name: string;
   address: string;
   activityCode: string;
-  apiKey?: string; // Cap 9.1
+  apiKey?: string;
+}
+
+export interface AccountMapping {
+  id: string;
+  itemName: string;
+  accountCode: string;
+  accountName: string;
+  type: string;
+}
+
+export interface FiniquitoRecord {
+  id: string;
+  employeeId: string;
+  terminationDate: string;
+  cause: string;
+  totalAmount: number;
+  yearsOfServiceIndemnity: number;
+  vacationIndemnity: number;
+  noticeIndemnity: number;
 }

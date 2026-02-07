@@ -1,5 +1,5 @@
 
-import { Company, Employee, PayrollResult, MonthlyParameters, Loan, LaborDocument, ApiLog } from '../types';
+import { Company, Employee, PayrollResult, MonthlyParameters, Loan, LaborDocument, ApiLog, AccountMapping, FiniquitoRecord, WorkerVacation } from '../types';
 
 let db: any = null;
 
@@ -24,7 +24,14 @@ const createTables = () => {
     CREATE TABLE IF NOT EXISTS employees (
       id TEXT PRIMARY KEY, companyId TEXT, rut TEXT, firstName TEXT, lastName TEXT, email TEXT, 
       baseSalary REAL, position TEXT, costCenterId TEXT, supervisorId TEXT, startDate TEXT, 
-      contractType TEXT, afpName TEXT, healthName TEXT, isActive INTEGER, bankData TEXT
+      contractType TEXT, afpName TEXT, healthName TEXT, isActive INTEGER, bankData TEXT,
+      terminationDate TEXT, terminationCause TEXT, vacationDaysRemaining REAL
+    );
+    CREATE TABLE IF NOT EXISTS vacations (
+      id TEXT PRIMARY KEY, workerId TEXT, startDate TEXT, endDate TEXT, daysTaken REAL, status TEXT
+    );
+    CREATE TABLE IF NOT EXISTS account_mappings (
+      id TEXT PRIMARY KEY, itemName TEXT, accountCode TEXT, accountName TEXT, type TEXT
     );
     CREATE TABLE IF NOT EXISTS loans (
       id TEXT PRIMARY KEY, employeeId TEXT, totalAmount REAL, monthlyAmount REAL, 
@@ -35,6 +42,10 @@ const createTables = () => {
     );
     CREATE TABLE IF NOT EXISTS documents (
       id TEXT PRIMARY KEY, employeeId TEXT, type TEXT, issueDate TEXT, period TEXT, verificationCode TEXT, status TEXT
+    );
+    CREATE TABLE IF NOT EXISTS finiquitos (
+      id TEXT PRIMARY KEY, employeeId TEXT, terminationDate TEXT, cause TEXT, 
+      yearsOfServiceIndemnity REAL, vacationIndemnity REAL, noticeIndemnity REAL, totalAmount REAL
     );
     CREATE TABLE IF NOT EXISTS monthly_parameters (
       id TEXT PRIMARY KEY, year INTEGER, month INTEGER, uf REAL, utm REAL, imm REAL, sis REAL, 
@@ -68,10 +79,11 @@ export const sqliteStore = {
   },
   saveEmployee: (e: Employee) => {
     const bankDataStr = e.bankData ? JSON.stringify(e.bankData) : null;
-    db.run("INSERT OR REPLACE INTO employees VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
+    db.run("INSERT OR REPLACE INTO employees VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
       e.id, e.companyId, e.rut, e.firstName, e.lastName, e.email || '', 
       e.baseSalary, e.position, e.costCenterId, e.supervisorId || '',
-      e.startDate, e.contractType, e.afpName, e.healthName, e.isActive ? 1 : 0, bankDataStr
+      e.startDate, e.contractType, e.afpName, e.healthName, e.isActive ? 1 : 0, bankDataStr,
+      e.terminationDate || null, e.terminationCause || null, e.vacationDaysRemaining || 15
     ]);
     persistDb();
   },
@@ -85,49 +97,50 @@ export const sqliteStore = {
         id: v[0], companyId: v[1], rut: v[2], firstName: v[3], lastName: v[4], email: v[5], 
         baseSalary: v[6], position: v[7], costCenterId: v[8], supervisorId: v[9],
         startDate: v[10], contractType: v[11], afpName: v[12], healthName: v[13], 
-        isActive: v[14] === 1, bankData: v[15] ? JSON.parse(v[15]) : undefined
+        isActive: v[14] === 1, bankData: v[15] ? JSON.parse(v[15]) : undefined,
+        terminationDate: v[16], terminationCause: v[17], vacationDaysRemaining: v[18]
       });
     }
     stmt.free();
     return results;
   },
-  saveLoan: (l: Loan) => {
-    db.run("INSERT OR REPLACE INTO loans VALUES (?,?,?,?,?,?,?)", [l.id, l.employeeId, l.totalAmount, l.monthlyAmount, l.remainingAmount, l.installments, l.paidInstallments]);
+  saveVacation: (v: WorkerVacation) => {
+    db.run("INSERT OR REPLACE INTO vacations VALUES (?,?,?,?,?,?)", [v.id, v.workerId, v.startDate, v.endDate, v.daysTaken, v.status]);
+    if (v.status === 'APROBADO') {
+      db.run("UPDATE employees SET vacationDaysRemaining = vacationDaysRemaining - ? WHERE id = ?", [v.daysTaken, v.workerId]);
+    }
     persistDb();
   },
-  getLoans: (employeeId: string): Loan[] => {
-    const stmt = db.prepare("SELECT * FROM loans WHERE employeeId = ?");
-    stmt.bind([employeeId]);
+  getVacations: (workerId?: string): WorkerVacation[] => {
+    const query = workerId ? "SELECT * FROM vacations WHERE workerId = ?" : "SELECT * FROM vacations";
+    const stmt = db.prepare(query);
+    if (workerId) stmt.bind([workerId]);
     const results = [];
     while (stmt.step()) {
       const v = stmt.get();
-      results.push({ id: v[0], employeeId: v[1], totalAmount: v[2], monthlyAmount: v[3], remainingAmount: v[4], installments: v[5], paidInstallments: v[6] });
+      results.push({ id: v[0], workerId: v[1], startDate: v[2], endDate: v[3], daysTaken: v[4], status: v[5] });
     }
     stmt.free();
     return results;
   },
-  saveApiLog: (log: ApiLog) => {
-    db.run("INSERT OR REPLACE INTO api_logs VALUES (?,?,?,?,?)", [log.id, log.timestamp, log.endpoint, log.status, log.message]);
+  saveFiniquito: (f: FiniquitoRecord) => {
+    db.run("INSERT OR REPLACE INTO finiquitos VALUES (?,?,?,?,?,?,?,?)", [
+      f.id, f.employeeId, f.terminationDate, f.cause, f.yearsOfServiceIndemnity, f.vacationIndemnity, f.noticeIndemnity, f.totalAmount
+    ]);
+    db.run("UPDATE employees SET isActive = 0, terminationDate = ?, terminationCause = ? WHERE id = ?", [f.terminationDate, f.cause, f.employeeId]);
     persistDb();
   },
-  getApiLogs: (): ApiLog[] => {
-    try {
-      const res = db.exec("SELECT * FROM api_logs ORDER BY timestamp DESC LIMIT 50");
-      return res.length > 0 ? res[0].values.map((v: any) => ({ id: v[0], timestamp: v[1], endpoint: v[2], status: v[3], message: v[4] })) : [];
-    } catch (e) { return []; }
-  },
-  saveDocument: (doc: LaborDocument) => {
-    db.run("INSERT OR REPLACE INTO documents VALUES (?,?,?,?,?,?,?)", [doc.id, doc.employeeId, doc.type, doc.issueDate, doc.period, doc.verificationCode, doc.status]);
-    persistDb();
-  },
-  getDocuments: (employeeId?: string): LaborDocument[] => {
-    const query = employeeId ? "SELECT * FROM documents WHERE employeeId = ?" : "SELECT * FROM documents";
+  getFiniquitos: (employeeId?: string): FiniquitoRecord[] => {
+    const query = employeeId ? "SELECT * FROM finiquitos WHERE employeeId = ?" : "SELECT * FROM finiquitos";
     const stmt = db.prepare(query);
     if (employeeId) stmt.bind([employeeId]);
     const results = [];
     while (stmt.step()) {
       const v = stmt.get();
-      results.push({ id: v[0], employeeId: v[1], type: v[2] as any, issueDate: v[3], period: v[4], verificationCode: v[5], status: v[6] as any });
+      results.push({ 
+        id: v[0], employeeId: v[1], terminationDate: v[2], cause: v[3], 
+        yearsOfServiceIndemnity: v[4], vacationIndemnity: v[5], noticeIndemnity: v[6], totalAmount: v[7]
+      });
     }
     stmt.free();
     return results;

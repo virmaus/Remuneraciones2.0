@@ -1,392 +1,528 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  Users, Building2, Calculator, BarChart3, Settings,
-  Download, RefreshCw, Unlock, Lock, ShieldCheck, AlertCircle, FileSpreadsheet,
-  Wallet, TrendingUp, Upload, FileText, CheckCircle2, Save, UserPlus,
-  Calendar, X, Play, Info, Mail, Briefcase, HeartPulse, CheckCircle, FileJson, Layers,
-  PieChart as PieIcon, TrendingDown, ArrowUpRight, ArrowDownRight, Printer, FileBadge, 
-  QrCode, Network, Link2, Server, Globe, Activity, Database, Plus, Trash2, ListChecks
+  Users, Calculator, Layers, FileText, Database, Activity, 
+  Briefcase, CloudLightning, RefreshCw, ArrowRightLeft, 
+  BadgeCheck, Scale, LayoutDashboard, X, Plus, 
+  CheckCircle2, Save, TrendingUp, Download, Lock, Unlock,
+  UserMinus, Receipt, Landmark, Umbrella, ChevronDown, Building2,
+  FileSpreadsheet, ShieldAlert, FileCheck, CreditCard
 } from 'lucide-react';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  PieChart, Pie, Cell, AreaChart, Area, Legend 
-} from 'recharts';
-import { Company, Employee, MonthlyParameters, PayrollResult, ContractType, DocumentType, LaborDocument, ApiLog } from './types';
+import { ModuleType, Employee, MonthlyParameters, PayrollResult, Company, FiniquitoRecord, WorkerVacation } from './types';
 import { sqliteStore, initSqlite } from './store/sqliteEngine';
 import { calculatePayroll } from './services/payrollService';
 
-const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+const TERMINATION_CAUSES = [
+  "Art. 159 N°1 - Mutuo acuerdo de las partes",
+  "Art. 159 N°2 - Resignación voluntaria (Renuncia)",
+  "Art. 159 N°4 - Vencimiento del plazo convenido",
+  "Art. 159 N°5 - Conclusión del trabajo o servicio",
+  "Art. 160 - Causales subjetivas (Faltas del trabajador)",
+  "Art. 161 - Necesidades de la empresa"
+];
+
+const MONTHS = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+];
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'payroll' | 'processes' | 'analytics' | 'documents'>('dashboard');
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
+  const [activeTab, setActiveTab] = useState<ModuleType>(ModuleType.DASHBOARD);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [payrollResults, setPayrollResults] = useState<PayrollResult[]>([]);
-  const [dbStatus, setDbStatus] = useState<'initializing' | 'ready' | 'error'>('initializing');
-  
-  // States for Processes (Cap 9)
-  const [centralizationType, setCentralizationType] = useState<'detail' | 'summary'>('summary');
-  const [showEmpModal, setShowEmpModal] = useState(false);
-  const [newEmpForm, setNewEmpForm] = useState<Partial<Employee>>({
-    rut: '', firstName: '', lastName: '', baseSalary: 460000, position: '', contractType: ContractType.INDEFINITE, afpName: 'Provida', healthName: 'Fonasa'
-  });
+  const [finiquitos, setFiniquitos] = useState<FiniquitoRecord[]>([]);
+  const [vacations, setVacations] = useState<WorkerVacation[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [dbReady, setDbReady] = useState(false);
+
+  // Modal States
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showFiniquitoModal, setShowFiniquitoModal] = useState(false);
+  const [showCompanyModal, setShowCompanyModal] = useState(false);
+  const [showPeriodModal, setShowPeriodModal] = useState(false);
+  const [showVacationModal, setShowVacationModal] = useState(false);
 
   const [params, setParams] = useState<MonthlyParameters>({
     id: 'p-current', year: 2024, month: 3, uf: 36800.45, utm: 64793, imm: 460000, sis: 1.61, isClosed: false, lastFolio: 0
   });
 
+  const [newEmp, setNewEmp] = useState<Partial<Employee>>({
+    rut: '', firstName: '', lastName: '', baseSalary: 500000, position: '', costCenterId: 'ADM-01',
+    afpName: 'HABITAT', healthName: 'FONASA', contractType: 'INDEFINIDO', vacationDaysRemaining: 15
+  });
+
+  const [vacationForm, setVacationForm] = useState<Partial<WorkerVacation>>({
+    workerId: '', startDate: '', endDate: '', daysTaken: 0, status: 'APROBADO'
+  });
+
+  const [newCompany, setNewCompany] = useState<Partial<Company>>({
+    rut: '', name: '', address: '', activityCode: ''
+  });
+
+  const [finiquitoForm, setFiniquitoForm] = useState<Partial<FiniquitoRecord>>({
+    employeeId: '',
+    terminationDate: new Date().toISOString().split('T')[0],
+    cause: TERMINATION_CAUSES[0],
+    yearsOfServiceIndemnity: 0,
+    vacationIndemnity: 0,
+    noticeIndemnity: 0
+  });
+
   useEffect(() => {
     const startup = async () => {
-      try {
-        await initSqlite();
-        setDbStatus('ready');
-        let comps = sqliteStore.getCompanies();
-        if (comps.length === 0) {
-          const demoCompany = { id: crypto.randomUUID(), rut: '76.123.456-K', name: 'Corporación Industrial S.A.', address: 'Panamericana Norte 1200', activityCode: '620100' };
-          sqliteStore.saveCompany(demoCompany);
-          comps = [demoCompany];
-        }
-        setCompanies(comps);
-        if (comps.length > 0) setSelectedCompany(comps[0]);
-      } catch (e) { setDbStatus('error'); }
+      await initSqlite();
+      const comps = sqliteStore.getCompanies();
+      setCompanies(comps);
+      
+      if (comps.length === 0) {
+        const demo = { id: crypto.randomUUID(), rut: '76.123.456-K', name: 'Corporación Transtecnia S.A.', address: 'Apoquindo 3000', activityCode: '620100' };
+        sqliteStore.saveCompany(demo);
+        setCompanies([demo]);
+        setSelectedCompany(demo);
+      } else {
+        setSelectedCompany(comps[0]);
+      }
+      
+      loadPeriodData(3, 2024);
+      setDbReady(true);
     };
     startup();
   }, []);
 
   useEffect(() => {
-    if (dbStatus === 'ready' && selectedCompany) {
-      const storedParams = sqliteStore.getMonthlyParameters(params.month, params.year);
-      if (storedParams) setParams(storedParams);
-      setEmployees(sqliteStore.getEmployees(selectedCompany.id));
-      setPayrollResults(sqliteStore.getPayrollResults(params.month, params.year));
+    if (dbReady && selectedCompany) {
+      refreshData();
     }
-  }, [selectedCompany, params.month, params.year, dbStatus]);
+  }, [dbReady, selectedCompany, params.month, params.year]);
 
-  const handleSaveEmployee = (e: React.FormEvent) => {
-    e.preventDefault();
+  const loadPeriodData = (month: number, year: number) => {
+    const storedParams = sqliteStore.getMonthlyParameters(month, year);
+    if (storedParams) {
+      setParams(storedParams);
+    } else {
+      const defaultParams: MonthlyParameters = {
+        id: `${year}-${month}`,
+        year, month, uf: 36800.45, utm: 64793, imm: 460000, sis: 1.61, isClosed: false, lastFolio: 0
+      };
+      setParams(defaultParams);
+    }
+  };
+
+  const refreshData = () => {
     if (!selectedCompany) return;
-    const emp: Employee = { ...newEmpForm as Employee, id: crypto.randomUUID(), companyId: selectedCompany.id, costCenterId: 'ADM-01', startDate: new Date().toISOString(), isActive: true };
-    sqliteStore.saveEmployee(emp);
-    setEmployees(prev => [...prev, emp]);
-    setShowEmpModal(false);
+    setEmployees(sqliteStore.getEmployees(selectedCompany.id));
+    setPayrollResults(sqliteStore.getPayrollResults(params.month, params.year));
+    setFiniquitos(sqliteStore.getFiniquitos());
+    setVacations(sqliteStore.getVacations());
+    setCompanies(sqliteStore.getCompanies());
   };
 
-  const toggleMonthLock = () => {
-    const newParams = { ...params, isClosed: !params.isClosed };
-    sqliteStore.saveMonthlyParameters(newParams);
-    setParams(newParams);
+  const handleRunPayroll = () => {
+    if (params.isClosed) return alert("El periodo está cerrado.");
+    employees.forEach(emp => {
+      if (emp.isActive) {
+        const res = calculatePayroll(emp, params);
+        sqliteStore.savePayrollResult(res);
+      }
+    });
+    refreshData();
+    alert("Cálculo de nómina finalizado.");
   };
 
-  const centralizarContabilidad = () => {
-    alert(`Centralización generada (${centralizationType === 'detail' ? 'Detallada' : 'Resumida'}). Asiento enviado a cola de espera ERP.`);
+  const handleSaveVacation = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!vacationForm.workerId || !vacationForm.daysTaken) return alert("Complete los datos requeridos.");
+    const emp = employees.find(e => e.id === vacationForm.workerId);
+    if (emp && emp.vacationDaysRemaining < (vacationForm.daysTaken || 0)) {
+        return alert("Saldo insuficiente.");
+    }
+    const vac: WorkerVacation = {
+        id: crypto.randomUUID(),
+        workerId: vacationForm.workerId || '',
+        startDate: vacationForm.startDate || '',
+        endDate: vacationForm.endDate || '',
+        daysTaken: vacationForm.daysTaken || 0,
+        status: 'APROBADO'
+    };
+    sqliteStore.saveVacation(vac);
+    setShowVacationModal(false);
+    refreshData();
   };
 
-  const stats = useMemo(() => ({
-    bruto: payrollResults.reduce((a, b) => a + b.grossSalary, 0),
-    liquido: payrollResults.reduce((a, b) => a + b.netSalary, 0),
-    count: employees.length
-  }), [payrollResults, employees]);
+  const handleSaveFiniquito = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!finiquitoForm.employeeId) return alert("Seleccione un colaborador.");
+    const total = (finiquitoForm.yearsOfServiceIndemnity || 0) + 
+                  (finiquitoForm.vacationIndemnity || 0) + 
+                  (finiquitoForm.noticeIndemnity || 0);
+    const record: FiniquitoRecord = {
+      id: crypto.randomUUID(),
+      employeeId: finiquitoForm.employeeId,
+      terminationDate: finiquitoForm.terminationDate || '',
+      cause: finiquitoForm.cause || '',
+      yearsOfServiceIndemnity: finiquitoForm.yearsOfServiceIndemnity || 0,
+      vacationIndemnity: finiquitoForm.vacationIndemnity || 0,
+      noticeIndemnity: finiquitoForm.noticeIndemnity || 0,
+      totalAmount: total
+    };
+    sqliteStore.saveFiniquito(record);
+    setShowFiniquitoModal(false);
+    refreshData();
+    alert("Finiquito registrado. El colaborador ahora figura como Inactivo.");
+  };
 
-  if (dbStatus === 'initializing') return <LoadingScreen />;
+  const toggleClosure = () => {
+    const nextState = !params.isClosed;
+    const updated = { ...params, isClosed: nextState };
+    setParams(updated);
+    sqliteStore.saveMonthlyParameters(updated);
+  };
+
+  if (!dbReady) return <LoadingScreen />;
+
+  const activeEmployees = employees.filter(e => e.isActive);
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden text-slate-900 font-sans">
+    <div className="flex h-screen bg-[#F8FAFC] text-slate-900 font-sans overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-64 bg-slate-900 text-white flex flex-col shadow-2xl z-20">
-        <div className="p-8 border-b border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg"><ShieldCheck className="w-6 h-6" /></div>
-            <div>
-              <h1 className="text-sm font-black uppercase tracking-tighter">RemunPro</h1>
-              <p className="text-[10px] text-emerald-400 font-bold uppercase italic">Chapter 9 System</p>
-            </div>
-          </div>
+      <aside className="w-64 bg-[#0F172A] text-white flex flex-col shadow-2xl z-20">
+        <div className="p-6 bg-[#1E293B] border-b border-white/5 flex items-center gap-3">
+          <div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center shadow-lg"><Briefcase className="w-6 h-6" /></div>
+          <div><h1 className="text-sm font-black tracking-tight uppercase">RemunPro</h1><p className="text-[10px] text-indigo-400 font-bold uppercase">Analytics 9.5</p></div>
         </div>
-        
-        <nav className="flex-1 px-4 py-8 space-y-2">
-          <SidebarItem active={activeTab==='dashboard'} onClick={()=>setActiveTab('dashboard')} icon={BarChart3} label="Dashboard" />
-          <SidebarItem active={activeTab==='employees'} onClick={()=>setActiveTab('employees')} icon={Users} label="RRHH (Fichas)" />
-          <SidebarItem active={activeTab==='payroll'} onClick={()=>setActiveTab('payroll')} icon={Calculator} label="Cálculos" />
-          <SidebarItem active={activeTab==='processes'} onClick={()=>setActiveTab('processes')} icon={Layers} label="Procesos (Cap 9)" />
-          <SidebarItem active={activeTab==='analytics'} onClick={()=>setActiveTab('analytics')} icon={PieIcon} label="Analítica" />
-          <SidebarItem active={activeTab==='documents'} onClick={()=>setActiveTab('documents')} icon={FileBadge} label="Documentos" />
+        <nav className="flex-1 py-8 px-4 space-y-1.5 overflow-y-auto">
+          <SidebarItem active={activeTab === ModuleType.DASHBOARD} onClick={() => setActiveTab(ModuleType.DASHBOARD)} icon={LayoutDashboard} label="Dashboard" />
+          <SectionLabel label="Operaciones" />
+          <SidebarItem active={activeTab === ModuleType.ARCHIVO} onClick={() => setActiveTab(ModuleType.ARCHIVO)} icon={Database} label="Archivo Fichas" />
+          <SidebarItem active={activeTab === ModuleType.MOVIMIENTOS} onClick={() => setActiveTab(ModuleType.MOVIMIENTOS)} icon={ArrowRightLeft} label="Movimientos" />
+          <SidebarItem active={activeTab === ModuleType.LIQUIDACIONES} onClick={() => setActiveTab(ModuleType.LIQUIDACIONES)} icon={FileText} label="Liquidaciones" />
+          <SectionLabel label="Recursos Humanos" />
+          <SidebarItem active={activeTab === ModuleType.RRHH} onClick={() => setActiveTab(ModuleType.RRHH)} icon={Umbrella} label="Vacaciones" />
+          <SidebarItem active={activeTab === ModuleType.FINIQUITOS} onClick={() => setActiveTab(ModuleType.FINIQUITOS)} icon={UserMinus} label="Finiquitos" />
+          <SidebarItem active={activeTab === ModuleType.PROCESOS} onClick={() => setActiveTab(ModuleType.PROCESOS)} icon={Layers} label="Procesos Cierre" />
         </nav>
-
-        <div className="p-6 border-t border-slate-800">
-          <button onClick={() => sqliteStore.exportBackup()} className="w-full py-4 bg-slate-800 rounded-2xl text-[10px] font-black hover:bg-slate-700 flex items-center justify-center gap-3 border border-slate-700 transition-all uppercase">
-            <Download className="w-4 h-4" /> Exportar SQLite
-          </button>
+        <div className="p-4 bg-slate-900/50 border-t border-white/5 space-y-3">
+          <button onClick={() => sqliteStore.exportBackup()} className="w-full py-2.5 bg-slate-800 rounded-lg text-[10px] font-black uppercase flex items-center justify-center gap-2"><Download className="w-3.5 h-3.5" /> Backup SQLite</button>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden relative">
-        {params.isClosed && (
-          <div className="absolute top-0 left-0 right-0 h-1 bg-rose-500 z-50 animate-pulse"></div>
-        )}
-
-        <header className="h-24 bg-white border-b border-slate-200 flex items-center justify-between px-10 shadow-sm z-10">
-          <div className="flex flex-col">
-            <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Empresa Operativa</span>
-            <select 
-              value={selectedCompany?.id || ''} 
-              onChange={(e)=>setSelectedCompany(companies.find(c=>c.id===e.target.value)||null)}
-              className="text-sm font-black bg-transparent border-none p-0 uppercase focus:ring-0 cursor-pointer"
-            >
-              {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
+      <main className="flex-1 flex flex-col relative">
+        <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-10 shadow-sm z-10">
+          <button onClick={() => setShowCompanyModal(true)} className="flex flex-col text-left group">
+            <div className="flex items-center gap-2"><span className="text-[10px] font-black text-slate-400 uppercase">Organización:</span><span className="text-xs font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded uppercase flex items-center gap-1">Cambiar <ChevronDown className="w-3 h-3" /></span></div>
+            <span className="text-lg font-black text-slate-800 uppercase italic tracking-tighter group-hover:text-indigo-600 transition-colors">{selectedCompany?.name || 'Seleccione Empresa'}</span>
+          </button>
           
-          <div className="flex items-center gap-6">
-            <div className="flex items-center bg-slate-100 rounded-3xl p-1.5 border border-slate-200">
-              <select value={params.month} onChange={(e) => setParams({...params, month: Number(e.target.value)})} className="bg-transparent border-none text-[11px] font-black uppercase px-6 focus:ring-0">
-                {MONTHS.map((m, idx) => <option key={idx} value={idx + 1}>{m}</option>)}
-              </select>
-              <div className="w-px h-6 bg-slate-300 mx-2"></div>
-              <select value={params.year} onChange={(e) => setParams({...params, year: Number(e.target.value)})} className="bg-transparent border-none text-[11px] font-black px-6 focus:ring-0">
-                {[2023, 2024, 2025].map(y => <option key={y} value={y}>{y}</option>)}
-              </select>
-            </div>
-            
-            <button onClick={toggleMonthLock} className={`flex items-center gap-3 px-6 py-3 rounded-2xl border transition-all ${params.isClosed ? 'bg-rose-50 border-rose-100 text-rose-600' : 'bg-emerald-50 border-emerald-100 text-emerald-600 hover:bg-emerald-100'}`}>
-              {params.isClosed ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
-              <span className="text-[10px] font-black uppercase tracking-widest">{params.isClosed ? 'Periodo Bloqueado' : 'Periodo Abierto'}</span>
+          <div className="flex items-center bg-slate-100 rounded-2xl p-1 border border-slate-200 shadow-inner">
+            <button onClick={() => setShowPeriodModal(true)} className="px-6 py-2 hover:bg-white rounded-xl transition-all text-left">
+              <span className="text-[10px] font-black text-slate-400 block uppercase">Mes Proceso</span>
+              <span className="text-xs font-black text-slate-800 uppercase italic flex items-center gap-1">{MONTHS[params.month - 1]} {params.year} <ChevronDown className="w-3 h-3 text-indigo-500" /></span>
+            </button>
+            <div className="w-px h-8 bg-slate-300 mx-2"></div>
+            <button onClick={toggleClosure} className={`px-6 py-2 flex items-center gap-2 rounded-xl transition-all ${params.isClosed ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'}`}>
+              {params.isClosed ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+              <span className="text-[10px] font-black uppercase">{params.isClosed ? 'Cerrado' : 'Abierto'}</span>
             </button>
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-12 bg-slate-50/50">
-          {/* TAB: RRHH (Fichas) */}
-          {activeTab === 'employees' && (
-            <div className="space-y-10 animate-in slide-in-from-bottom-4 duration-500">
+        <div className="flex-1 overflow-y-auto p-10">
+          {activeTab === ModuleType.DASHBOARD && (
+            <div className="grid grid-cols-4 gap-6">
+              <DashboardCard label="Personal Activo" value={activeEmployees.length} sub="Fichas" icon={Users} color="border-l-indigo-500 text-indigo-600" />
+              <DashboardCard label="Total Líquido" value={`$${payrollResults.reduce((a,b)=>a+b.netSalary, 0).toLocaleString()}`} sub="Mes" icon={CreditCard} color="border-l-emerald-500 text-emerald-600" />
+              <DashboardCard label="Bajas del Mes" value={finiquitos.length} sub="Finiquitos" icon={UserMinus} color="border-l-rose-500 text-rose-600" />
+              <DashboardCard label="Vacaciones" value={employees.reduce((a,b)=>a+(b.vacationDaysRemaining || 0), 0).toFixed(1)} sub="Días Totales" icon={Umbrella} color="border-l-amber-500 text-amber-600" />
+            </div>
+          )}
+
+          {activeTab === ModuleType.RRHH && (
+            <div className="space-y-6">
               <div className="flex justify-between items-end">
-                <div>
-                  <h2 className="text-4xl font-black uppercase tracking-tighter italic">Nómina de Colaboradores</h2>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-2">Gestión de Fichas del Personal e Información Base</p>
-                </div>
-                <button onClick={() => setShowEmpModal(true)} className="flex items-center gap-3 px-8 py-4 bg-indigo-600 text-white rounded-[2rem] font-black uppercase text-[11px] shadow-2xl shadow-indigo-200 hover:bg-indigo-700 transition-all">
-                  <UserPlus className="w-5 h-5" /> Crear Nueva Ficha
-                </button>
+                <div><h2 className="text-3xl font-black uppercase italic tracking-tighter">Vacaciones</h2><p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Saldos y periodos de descanso</p></div>
+                <button onClick={() => setShowVacationModal(true)} className="px-8 py-4 bg-amber-500 text-white rounded-2xl text-xs font-black uppercase hover:bg-amber-600 shadow-xl flex items-center gap-3"><Plus className="w-5 h-5" /> Nueva Solicitud</button>
               </div>
-
-              <div className="bg-white rounded-[3rem] border border-slate-200 shadow-sm overflow-hidden">
-                <table className="w-full text-left">
-                  <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
-                    <tr>
-                      <th className="px-10 py-6">Colaborador</th>
-                      <th className="px-10 py-6">RUT</th>
-                      <th className="px-10 py-6">Cargo</th>
-                      <th className="px-10 py-6 text-right">Sueldo Base</th>
-                      <th className="px-10 py-6 text-center">Estado</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {employees.map(e => (
-                      <tr key={e.id} className="hover:bg-slate-50 transition-colors group">
-                        <td className="px-10 py-6">
-                          <div className="text-xs font-black uppercase">{e.firstName} {e.lastName}</div>
-                          <div className="text-[9px] text-slate-400 font-bold">{e.contractType}</div>
-                        </td>
-                        <td className="px-10 py-6 text-[11px] font-bold text-slate-500">{e.rut}</td>
-                        <td className="px-10 py-6 text-xs text-slate-600 font-medium italic">{e.position || 'Sin Cargo'}</td>
-                        <td className="px-10 py-6 text-right font-black text-indigo-600">${e.baseSalary.toLocaleString()}</td>
-                        <td className="px-10 py-6 text-center">
-                          <span className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-[9px] font-black uppercase">Activo</span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <VacationTable vacations={vacations} employees={employees} />
             </div>
           )}
 
-          {/* TAB: PROCESOS (CAP 9) */}
-          {activeTab === 'processes' && (
-            <div className="space-y-12 animate-in fade-in duration-500">
-              <div>
-                <h2 className="text-4xl font-black uppercase tracking-tighter italic">Procesos y Centralización</h2>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-2 tracking-[0.2em]">Cierre Mensual, Foliación e Interfaz Contable</p>
-              </div>
-
+          {activeTab === ModuleType.PROCESOS && (
+            <div className="space-y-10">
+              <h2 className="text-3xl font-black uppercase italic tracking-tighter">Cierre Mensual</h2>
               <div className="grid grid-cols-3 gap-8">
-                {/* Foliar Libro */}
-                <ProcessCard 
-                  title="Foliar Libro Remu" 
-                  icon={FileSpreadsheet} 
-                  desc="Asignar números de folio correlativos para timbraje electrónico."
-                  onClick={() => {
-                    const nextFolio = Number(prompt("Último folio utilizado:", params.lastFolio || 0)) + 1;
-                    setParams({...params, lastFolio: nextFolio});
-                    alert(`Siguiente folio asignado: ${nextFolio}`);
-                  }}
-                  actionLabel={`Folio Actual: ${params.lastFolio || 0}`}
-                />
-
-                {/* Centralización */}
-                <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-xl transition-all">
-                  <div>
-                    <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mb-6"><Database className="w-7 h-7" /></div>
-                    <h4 className="text-lg font-black uppercase italic mb-3">Centralizar</h4>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase leading-relaxed mb-6">Generar comprobante contable de sueldos y leyes sociales.</p>
-                    <div className="flex gap-2 mb-6">
-                      <button onClick={()=>setCentralizationType('summary')} className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${centralizationType==='summary' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-slate-100 text-slate-500'}`}>Resumido</button>
-                      <button onClick={()=>setCentralizationType('detail')} className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${centralizationType==='detail' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-slate-100 text-slate-500'}`}>Detallado</button>
-                    </div>
-                  </div>
-                  <button onClick={centralizarContabilidad} className="w-full py-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-colors flex items-center justify-center gap-2">
-                    <CheckCircle className="w-4 h-4" /> Generar Asiento
-                  </button>
+                <div className="col-span-2 bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
+                  <h3 className="text-xs font-black uppercase text-slate-400 flex items-center gap-2 mb-4"><FileCheck className="w-5 h-5 text-indigo-500" /> Checklist de Periodo</h3>
+                  <CheckItem label="Cálculo de Nómina" value={`${payrollResults.length} de ${activeEmployees.length}`} status={payrollResults.length >= activeEmployees.length && activeEmployees.length > 0} />
+                  <CheckItem label="Parámetros Indicadores" value="Actualizados" status={true} />
+                  <CheckItem label="Libro Electrónico" value="Validado" status={true} />
                 </div>
-
-                {/* Utilidades de Mantenimiento */}
-                <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-xl transition-all">
-                  <div>
-                    <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mb-6"><Settings className="w-7 h-7" /></div>
-                    <h4 className="text-lg font-black uppercase italic mb-3">Mantenimiento</h4>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase leading-relaxed mb-6">Herramientas de limpieza y configuración técnica del periodo.</p>
-                    <div className="space-y-3">
-                       <UtilButton icon={Trash2} label="Borrar Retenciones" onClick={() => alert("Retenciones del periodo eliminadas.")} color="text-rose-600" />
-                       <UtilButton icon={Upload} label="Importar Datos" onClick={() => alert("Iniciando asistente de importación CSV/Excel...")} color="text-indigo-600" />
-                       <UtilButton icon={ListChecks} label="Asignar Cuentas" onClick={() => alert("Abriendo configuración de cuentas contables...")} color="text-slate-600" />
-                    </div>
-                  </div>
+                <div className="bg-[#0F172A] p-10 rounded-[3rem] text-white flex flex-col justify-between">
+                  <div><ShieldAlert className="w-12 h-12 text-amber-500 mb-6" /><h4 className="text-xl font-black italic uppercase mb-4">Cierre Definitivo</h4><p className="text-xs text-slate-400 leading-relaxed">Bloquea la edición de haberes, descuentos y fichas del periodo {MONTHS[params.month-1]}.</p></div>
+                  <button onClick={toggleClosure} className={`w-full py-6 rounded-2xl text-xs font-black uppercase shadow-xl ${params.isClosed ? 'bg-rose-600' : 'bg-indigo-600'}`}>{params.isClosed ? 'Reabrir Periodo' : 'Cerrar Mes'}</button>
                 </div>
               </div>
+            </div>
+          )}
 
-              {/* Gratificación Anual / Cierre */}
+          {activeTab === ModuleType.ARCHIVO && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-end"><h2 className="text-3xl font-black uppercase italic">Fichas</h2><button onClick={() => setShowAddModal(true)} className="px-8 py-4 bg-indigo-600 text-white rounded-2xl text-xs font-black uppercase shadow-xl flex items-center gap-3"><Plus className="w-5 h-5" /> Nuevo Colaborador</button></div>
+              <EmployeeTable employees={employees} />
+            </div>
+          )}
+
+          {activeTab === ModuleType.FINIQUITOS && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-end">
+                <div><h2 className="text-3xl font-black uppercase italic">Finiquitos</h2><p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Indemnizaciones y bajas</p></div>
+                <button onClick={() => setShowFiniquitoModal(true)} className="px-8 py-4 bg-rose-600 text-white rounded-2xl text-xs font-black uppercase shadow-xl flex items-center gap-3"><Receipt className="w-5 h-5" /> Generar Finiquito</button>
+              </div>
+              <FiniquitoTable finiquitos={finiquitos} employees={employees} />
+            </div>
+          )}
+
+          {activeTab === ModuleType.MOVIMIENTOS && (
+            <div className="space-y-10">
+              <h2 className="text-3xl font-black uppercase italic">Indicadores</h2>
               <div className="grid grid-cols-2 gap-8">
-                <div className="bg-emerald-600 p-10 rounded-[3.5rem] text-white shadow-2xl relative overflow-hidden group">
-                  <TrendingUp className="absolute -right-6 -bottom-6 w-32 h-32 opacity-10 group-hover:scale-110 transition-transform duration-700" />
-                  <h3 className="text-2xl font-black uppercase italic mb-4">Gratificación Anual</h3>
-                  <p className="text-xs font-medium opacity-80 leading-relaxed max-w-sm mb-8">
-                    Proceso de reliquidación de gratificación según Art. 47 y 50 del Código del Trabajo. Cálculo basado en utilidad líquida anual.
-                  </p>
-                  <button className="px-8 py-3 bg-white text-emerald-700 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-50 transition-colors">Ejecutar Cálculo</button>
+                <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-6">
+                   <div className="grid grid-cols-2 gap-6">
+                     <ParameterInput label="UF" value={params.uf} onChange={v=>setParams({...params, uf: Number(v)})} icon={Database} />
+                     <ParameterInput label="UTM" value={params.utm} onChange={v=>setParams({...params, utm: Number(v)})} icon={Scale} />
+                     <ParameterInput label="IMM" value={params.imm} onChange={v=>setParams({...params, imm: Number(v)})} icon={Calculator} />
+                     <ParameterInput label="SIS" value={params.sis} onChange={v=>setParams({...params, sis: Number(v)})} icon={ShieldAlert} suffix="%" />
+                   </div>
+                   <button onClick={() => { sqliteStore.saveMonthlyParameters(params); alert("Guardado."); }} className="w-full py-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase flex items-center justify-center gap-2"><Save className="w-4 h-4" /> Guardar</button>
                 </div>
-
-                <div className="bg-indigo-900 p-10 rounded-[3.5rem] text-white shadow-2xl flex flex-col justify-between">
-                  <div>
-                    <h3 className="text-2xl font-black uppercase italic mb-4">Cierre del Mes</h3>
-                    <p className="text-xs font-medium opacity-80 leading-relaxed mb-6">El cierre inhabilita cualquier modificación posterior en cálculos o fichas para este periodo.</p>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <button onClick={toggleMonthLock} className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${params.isClosed ? 'bg-rose-500 hover:bg-rose-600' : 'bg-indigo-600 hover:bg-indigo-500'}`}>
-                      {params.isClosed ? 'Desbloquear Mes' : 'Cerrar y Bloquear'}
-                    </button>
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center border-2 ${params.isClosed ? 'border-rose-400 bg-rose-400/20' : 'border-emerald-400 bg-emerald-400/20'}`}>
-                      {params.isClosed ? <Lock className="w-5 h-5 text-rose-300" /> : <Unlock className="w-5 h-5 text-emerald-300" />}
-                    </div>
-                  </div>
+                <div className="bg-indigo-50 p-8 rounded-[2.5rem] border-2 border-indigo-100 flex flex-col justify-between">
+                   <div><h3 className="text-lg font-black uppercase italic text-indigo-900">Motor de Cálculo</h3><p className="text-xs font-medium text-indigo-700/80">Procesamiento masivo de liquidaciones para {activeEmployees.length} colaboradores.</p></div>
+                   <button onClick={handleRunPayroll} disabled={params.isClosed} className="w-full py-6 bg-indigo-600 text-white rounded-2xl text-xs font-black uppercase shadow-xl shadow-indigo-600/20">Ejecutar Cálculo del Mes</button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* TAB: DASHBOARD (Resumen Cap 9) */}
-          {activeTab === 'dashboard' && (
-            <div className="space-y-10 animate-in fade-in duration-500">
-               <div className="grid grid-cols-4 gap-8">
-                 <StatCard label="Colaboradores" value={stats.count} sub="Fichas" icon={Users} color="text-indigo-600" />
-                 <StatCard label="Costo Bruto" value={`$${stats.bruto.toLocaleString()}`} sub="Mes" icon={Wallet} color="text-emerald-600" />
-                 <StatCard label="Último Folio" value={params.lastFolio || 0} sub="Timbraje" icon={FileText} color="text-amber-600" />
-                 <StatCard label="Estado Periodo" value={params.isClosed ? 'CERRADO' : 'ABIERTO'} sub="Seguridad" icon={params.isClosed ? Lock : Unlock} color={params.isClosed ? 'text-rose-600' : 'text-emerald-600'} />
-               </div>
-            </div>
-          )}
-          
-          {/* Placeholder para otras pestañas */}
-          {(activeTab === 'payroll' || activeTab === 'analytics' || activeTab === 'documents') && (
-            <div className="h-full flex flex-col items-center justify-center text-center opacity-40 grayscale">
-              <Calculator className="w-20 h-20 mb-6" />
-              <h3 className="text-xl font-black uppercase italic">Módulo en Desarrollo</h3>
-              <p className="text-xs font-medium mt-2">Continuando con la implementación del Capítulo 9 y 10.</p>
-            </div>
+          {activeTab === ModuleType.LIQUIDACIONES && (
+             <div className="space-y-8"><h2 className="text-3xl font-black uppercase italic">Liquidaciones</h2><PayrollTable results={payrollResults} employees={employees} /></div>
           )}
         </div>
       </main>
 
-      {/* Modal Nueva Ficha */}
-      {showEmpModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
-          <div className="bg-white w-full max-w-lg rounded-[3.5rem] p-12 shadow-2xl relative overflow-hidden">
-            <button onClick={() => setShowEmpModal(false)} className="absolute top-8 right-8 p-3 hover:bg-slate-100 rounded-full transition-colors"><X className="w-6 h-6" /></button>
-            <h2 className="text-3xl font-black uppercase italic mb-8 tracking-tighter">Nueva Ficha Colaborador</h2>
-            <form onSubmit={handleSaveEmployee} className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-2">RUT</label>
-                  <input required value={newEmpForm.rut} onChange={e => setNewEmpForm({...newEmpForm, rut: e.target.value})} className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-indigo-500 transition-all" placeholder="12.345.678-9" />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Sueldo Base</label>
-                  <input type="number" required value={newEmpForm.baseSalary} onChange={e => setNewEmpForm({...newEmpForm, baseSalary: Number(e.target.value)})} className="w-full px-6 py-4 bg-indigo-50 border-none rounded-2xl font-black text-indigo-700" />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Nombres</label>
-                <input required value={newEmpForm.firstName} onChange={e => setNewEmpForm({...newEmpForm, firstName: e.target.value})} className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl font-bold" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Apellidos</label>
-                <input required value={newEmpForm.lastName} onChange={e => setNewEmpForm({...newEmpForm, lastName: e.target.value})} className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl font-bold" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Cargo</label>
-                <input required value={newEmpForm.position} onChange={e => setNewEmpForm({...newEmpForm, position: e.target.value})} className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl font-bold" placeholder="Analista de Planta" />
-              </div>
-              <button type="submit" className="w-full py-6 bg-indigo-600 text-white rounded-[2rem] font-black uppercase tracking-widest shadow-2xl shadow-indigo-600/20 hover:bg-indigo-700 transition-all mt-4">Guardar en Nómina</button>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Modals Implementation */}
+      {showCompanyModal && <CompanyModal onClose={() => setShowCompanyModal(false)} companies={companies} selectedCompany={selectedCompany} onSelect={(c:any) => { setSelectedCompany(c); setShowCompanyModal(false); }} onSave={(e:any) => { e.preventDefault(); const comp: Company = {...newCompany as Company, id: crypto.randomUUID()}; sqliteStore.saveCompany(comp); setCompanies([...companies, comp]); setSelectedCompany(comp); setShowCompanyModal(false); }} newCompany={newCompany} setNewCompany={setNewCompany} />}
+      {showPeriodModal && <PeriodModal onClose={() => setShowPeriodModal(false)} params={params} onUpdate={(m:any, y:any) => { loadPeriodData(m, y); setShowPeriodModal(false); }} />}
+      {showAddModal && <AddEmployeeModal onClose={() => setShowAddModal(false)} newEmp={newEmp} setNewEmp={setNewEmp} onSave={(e:any) => { e.preventDefault(); const emp: Employee = {...newEmp as Employee, id: crypto.randomUUID(), companyId: selectedCompany!.id, startDate: new Date().toISOString().split('T')[0], isActive: true, vacationDaysRemaining: 15, syncStatus: 'PENDING'}; sqliteStore.saveEmployee(emp); setShowAddModal(false); refreshData(); }} />}
+      {showVacationModal && <VacationModal onClose={() => setShowVacationModal(false)} activeEmployees={activeEmployees} vacationForm={vacationForm} setVacationForm={setVacationForm} onSave={handleSaveVacation} />}
+      {showFiniquitoModal && <FiniquitoModal onClose={() => setShowFiniquitoModal(false)} activeEmployees={activeEmployees} finiquitoForm={finiquitoForm} setFiniquitoForm={setFiniquitoForm} onSave={handleSaveFiniquito} />}
     </div>
   );
 };
 
-const ProcessCard = ({ title, icon: Icon, desc, onClick, actionLabel }: any) => (
-  <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-xl transition-all">
-    <div>
-      <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mb-6"><Icon className="w-7 h-7" /></div>
-      <h4 className="text-lg font-black uppercase italic mb-3">{title}</h4>
-      <p className="text-[10px] text-slate-400 font-bold uppercase leading-relaxed mb-8">{desc}</p>
-    </div>
-    <button onClick={onClick} className="w-full py-4 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-100 flex items-center justify-center gap-2">
-       {actionLabel}
-    </button>
+// Components
+const VacationTable = ({ vacations, employees }: { vacations: WorkerVacation[], employees: Employee[] }) => (
+  <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
+    <table className="w-full text-left text-xs">
+      <thead className="bg-slate-50 text-slate-500 font-black uppercase border-b">
+        <tr><th className="px-10 py-6">Colaborador</th><th className="px-10 py-6">Inicio</th><th className="px-10 py-6">Término</th><th className="px-10 py-6 text-center">Días</th><th className="px-10 py-6 text-center">Estado</th></tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+        {vacations.length === 0 ? <tr><td colSpan={5} className="px-10 py-20 text-center opacity-30 font-black italic">Sin registros</td></tr> : vacations.map(v => {
+          const emp = employees.find(e => e.id === v.workerId);
+          return (<tr key={v.id} className="hover:bg-slate-50"><td className="px-10 py-6"><div className="font-black text-slate-800 uppercase italic">{emp?.firstName} {emp?.lastName}</div></td><td className="px-10 py-6">{v.startDate}</td><td className="px-10 py-6">{v.endDate}</td><td className="px-10 py-6 text-center font-black">{v.daysTaken}</td><td className="px-10 py-6 text-center"><span className="px-3 py-1 bg-emerald-50 text-emerald-700 font-black uppercase rounded-full border border-emerald-100">{v.status}</span></td></tr>)
+        })}
+      </tbody>
+    </table>
   </div>
 );
 
-const UtilButton = ({ icon: Icon, label, onClick, color }: any) => (
-  <button onClick={onClick} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 transition-colors">
-    <Icon className={`w-4 h-4 ${color}`} />
-    <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">{label}</span>
-  </button>
+const EmployeeTable = ({ employees }: { employees: Employee[] }) => (
+  <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
+    <table className="w-full text-left text-xs">
+      <thead className="bg-slate-50 text-slate-500 font-black uppercase border-b">
+        <tr><th className="px-10 py-6">RUT</th><th className="px-10 py-6">Nombre</th><th className="px-10 py-6">Cargo</th><th className="px-10 py-6 text-right">Saldo Vac.</th><th className="px-10 py-6 text-center">Estado</th></tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+        {employees.map(e => (
+          <tr key={e.id} className="hover:bg-slate-50/80 cursor-pointer">
+            <td className="px-10 py-6 font-bold">{e.rut}</td>
+            <td className="px-10 py-6 font-black uppercase italic">{e.firstName} {e.lastName}</td>
+            <td className="px-10 py-6 text-slate-400 font-bold">{e.position}</td>
+            <td className="px-10 py-6 text-right font-black text-amber-600">{(e.vacationDaysRemaining || 0).toFixed(1)} d</td>
+            <td className="px-10 py-6 text-center"><span className={`inline-block w-2.5 h-2.5 rounded-full ${e.isActive ? 'bg-emerald-500 shadow-emerald-500/50' : 'bg-rose-500'}`}></span></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
 );
 
+const FiniquitoTable = ({ finiquitos, employees }: { finiquitos: FiniquitoRecord[], employees: Employee[] }) => (
+  <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
+    <table className="w-full text-left text-xs">
+      <thead className="bg-slate-50 text-slate-500 font-black uppercase border-b">
+        <tr><th className="px-8 py-6">Colaborador</th><th className="px-8 py-6">Fecha Término</th><th className="px-8 py-6 text-right">Total Indem.</th><th className="px-8 py-6 text-center">Detalle</th></tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+        {finiquitos.map(f => {
+            const emp = employees.find(e => e.id === f.employeeId);
+            return (
+              <tr key={f.id} className="hover:bg-slate-50">
+                <td className="px-8 py-6 font-black text-slate-800 uppercase italic">{emp?.firstName} {emp?.lastName}</td>
+                <td className="px-8 py-6 font-bold text-slate-500">{f.terminationDate}</td>
+                <td className="px-8 py-6 text-right font-black text-indigo-600">${f.totalAmount.toLocaleString()}</td>
+                <td className="px-8 py-6 text-center"><FileText className="w-4 h-4 mx-auto text-slate-300" /></td>
+              </tr>
+            )
+        })}
+      </tbody>
+    </table>
+  </div>
+);
+
+const PayrollTable = ({ results, employees }: { results: PayrollResult[], employees: Employee[] }) => (
+  <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
+    <table className="w-full text-left text-xs">
+      <thead className="bg-slate-50 text-slate-500 font-black uppercase border-b">
+        <tr><th className="px-8 py-6">Colaborador</th><th className="px-8 py-6 text-right">Imponible</th><th className="px-8 py-6 text-right">Líquido</th><th className="px-8 py-6 text-center">Ficha</th></tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+        {results.map(res => {
+            const emp = employees.find(e => e.id === res.employeeId);
+            return (
+              <tr key={res.id} className="hover:bg-slate-50 transition-all">
+                <td className="px-8 py-6 font-black text-slate-800 uppercase italic">{emp?.firstName} {emp?.lastName}</td>
+                <td className="px-8 py-6 text-right font-bold text-slate-600">${res.taxableSalary.toLocaleString()}</td>
+                <td className="px-8 py-6 text-right font-black text-indigo-600 text-sm">${res.netSalary.toLocaleString()}</td>
+                <td className="px-8 py-6 text-center"><button className="p-2 bg-slate-100 rounded-lg"><FileText className="w-4 h-4 text-slate-400" /></button></td>
+              </tr>
+            );
+        })}
+      </tbody>
+    </table>
+  </div>
+);
+
+// UI Helpers
 const SidebarItem = ({ active, onClick, icon: Icon, label }: any) => (
-  <button onClick={onClick} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all ${active ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-600/30' : 'text-slate-400 hover:bg-slate-800'}`}>
+  <button onClick={onClick} className={`w-full flex items-center gap-4 px-5 py-3.5 rounded-2xl text-[11px] font-black uppercase transition-all ${active ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}>
     <Icon className="w-5 h-5" /> {label}
   </button>
 );
 
-const StatCard = ({ label, value, sub, icon: Icon, color }: any) => (
-  <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm relative overflow-hidden group">
-    <div className={`w-12 h-12 rounded-2xl bg-slate-50 ${color} flex items-center justify-center mb-6 group-hover:rotate-12 transition-transform`}><Icon className="w-6 h-6" /></div>
-    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
-    <div className="flex items-baseline gap-2 mt-1">
-      <p className="text-2xl font-black text-slate-900 tracking-tighter">{value}</p>
-      <span className="text-[9px] font-black text-slate-400 uppercase italic">{sub}</span>
+const SectionLabel = ({ label }: { label: string }) => (<div className="text-[9px] font-black text-slate-600 uppercase px-5 pt-8 pb-3 tracking-widest">{label}</div>);
+const CheckItem = ({ label, value, status }: { label: string, value: string, status: boolean }) => (
+  <div className="flex items-center justify-between p-6 bg-slate-50 rounded-2xl border border-slate-100">
+    <div className="flex items-center gap-4"><div className={`w-8 h-8 rounded-full flex items-center justify-center ${status ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-200'}`}>{status ? <CheckCircle2 className="w-5 h-5" /> : <Activity className="w-5 h-5" />}</div><span className="text-xs font-black uppercase text-slate-700">{label}</span></div><span className={`text-[10px] font-black uppercase ${status ? 'text-emerald-600' : 'text-slate-400'}`}>{value}</span>
+  </div>
+);
+const DashboardCard = ({ label, value, sub, icon: Icon, color }: any) => (
+  <div className={`bg-white p-8 rounded-[2.5rem] border-l-[6px] shadow-sm ${color} border border-slate-200 group hover:scale-[1.02] transition-all`}>
+    <div className="flex justify-between items-start mb-4"><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</span><Icon className="w-5 h-5 opacity-20" /></div>
+    <div className="flex items-baseline gap-2"><div className="text-3xl font-black text-slate-800">{value}</div><span className="text-[10px] font-bold text-slate-400 uppercase italic">{sub}</span></div>
+  </div>
+);
+const ParameterInput = ({ label, value, onChange, icon: Icon, suffix = '' }: any) => (
+  <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-2 ml-2"><Icon className="w-3 h-3" /> {label}</label><div className="relative"><input type="number" value={value} onChange={e=>onChange(e.target.value)} className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-xs font-black text-slate-700 shadow-inner" />{suffix && <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400">{suffix}</span>}</div></div>
+);
+const FormGroup = ({ label, value, onChange, placeholder, type = 'text' }: any) => (
+  <div className="space-y-2 flex-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-4">{label}</label><input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl font-bold text-slate-800 text-sm shadow-inner" /></div>
+);
+const LoadingScreen = () => (<div className="h-screen w-screen flex flex-col items-center justify-center bg-[#0F172A] text-white"><div className="w-20 h-20 border-8 border-indigo-500 border-t-transparent rounded-full animate-spin mb-8"></div><h2 className="text-[10px] font-black uppercase italic tracking-widest text-indigo-400 animate-pulse">Iniciando RemunPro Core</h2></div>);
+
+// Modales Auxiliares
+const CompanyModal = ({ onClose, companies, selectedCompany, onSelect, onSave, newCompany, setNewCompany }: any) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center p-8 bg-slate-950/80 backdrop-blur-md">
+    <div className="bg-white w-full max-w-4xl rounded-[3rem] p-12 relative flex flex-col max-h-[90vh]">
+      <button onClick={onClose} className="absolute top-8 right-8 p-3 hover:bg-slate-100 rounded-full"><X className="w-8 h-8" /></button>
+      <h2 className="text-3xl font-black uppercase italic mb-8">Empresas</h2>
+      <div className="grid grid-cols-2 gap-10 overflow-y-auto">
+        <div className="space-y-4">
+          <h3 className="text-[10px] font-black text-slate-400 uppercase ml-2">Seleccionar</h3>
+          {companies.map((c: any) => (
+            <button key={c.id} onClick={() => onSelect(c)} className={`w-full p-6 rounded-2xl border-2 text-left flex items-center gap-4 ${selectedCompany?.id === c.id ? 'border-indigo-600 bg-indigo-50' : 'border-slate-100 bg-slate-50'}`}>
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${selectedCompany?.id === c.id ? 'bg-indigo-600 text-white' : 'bg-slate-200'}`}><Building2 className="w-6 h-6" /></div>
+              <div><div className="font-black text-slate-800 uppercase italic tracking-tighter">{c.name}</div><div className="text-[10px] font-bold text-slate-400 uppercase">{c.rut}</div></div>
+            </button>
+          ))}
+        </div>
+        <form onSubmit={onSave} className="bg-slate-50 p-8 rounded-[2.5rem] space-y-4 border border-slate-200">
+          <FormGroup label="RUT" value={newCompany.rut} onChange={(v:any) => setNewCompany({...newCompany, rut: v})} />
+          <FormGroup label="Razón Social" value={newCompany.name} onChange={(v:any) => setNewCompany({...newCompany, name: v})} />
+          <button type="submit" className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase">Crear Empresa</button>
+        </form>
+      </div>
     </div>
   </div>
 );
 
-const LoadingScreen = () => (
-  <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-900 text-white">
-    <div className="w-20 h-20 border-8 border-indigo-600 border-t-transparent rounded-full animate-spin mb-10"></div>
-    <h2 className="text-xs font-black uppercase tracking-[0.5em] text-indigo-400 animate-pulse italic">Iniciando RemunPro...</h2>
+const PeriodModal = ({ onClose, params, onUpdate }: any) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center p-8 bg-slate-950/80 backdrop-blur-md">
+    <div className="bg-white w-full max-w-lg rounded-[3rem] p-12 relative">
+      <button onClick={onClose} className="absolute top-8 right-8 p-3 hover:bg-slate-100 rounded-full"><X className="w-8 h-8" /></button>
+      <h2 className="text-3xl font-black uppercase italic mb-8">Periodo de Proceso</h2>
+      <div className="grid grid-cols-3 gap-2">
+        {MONTHS.map((m, idx) => (
+          <button key={m} onClick={() => onUpdate(idx + 1, params.year)} className={`py-3 rounded-xl text-[10px] font-black uppercase ${params.month === idx + 1 ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>{m}</button>
+        ))}
+      </div>
+    </div>
+  </div>
+);
+
+const AddEmployeeModal = ({ onClose, newEmp, setNewEmp, onSave }: any) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center p-8 bg-slate-950/80 backdrop-blur-md">
+    <div className="bg-white w-full max-w-2xl rounded-[3rem] p-12 relative">
+      <button onClick={onClose} className="absolute top-8 right-8 p-3 hover:bg-slate-100 rounded-full"><X className="w-8 h-8" /></button>
+      <h2 className="text-3xl font-black uppercase italic mb-10">Nueva Ficha</h2>
+      <form onSubmit={onSave} className="space-y-6">
+        <div className="grid grid-cols-2 gap-6"><FormGroup label="RUT" value={newEmp.rut} onChange={(v:any)=>setNewEmp({...newEmp, rut: v})} /><FormGroup label="Sueldo Base" type="number" value={newEmp.baseSalary} onChange={(v:any)=>setNewEmp({...newEmp, baseSalary: Number(v)})} /></div>
+        <div className="grid grid-cols-2 gap-6"><FormGroup label="Nombres" value={newEmp.firstName} onChange={(v:any)=>setNewEmp({...newEmp, firstName: v})} /><FormGroup label="Apellidos" value={newEmp.lastName} onChange={(v:any)=>setNewEmp({...newEmp, lastName: v})} /></div>
+        <button type="submit" className="w-full py-6 bg-indigo-600 text-white rounded-[2rem] font-black uppercase">Incorporar Colaborador</button>
+      </form>
+    </div>
+  </div>
+);
+
+const VacationModal = ({ onClose, activeEmployees, vacationForm, setVacationForm, onSave }: any) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center p-8 bg-slate-950/80 backdrop-blur-md">
+    <div className="bg-white w-full max-w-2xl rounded-[3rem] p-12 relative">
+      <button onClick={onClose} className="absolute top-8 right-8 p-3 hover:bg-slate-100 rounded-full"><X className="w-8 h-8" /></button>
+      <h2 className="text-3xl font-black uppercase italic mb-10">Nueva Solicitud de Vacaciones</h2>
+      <form onSubmit={onSave} className="space-y-6">
+        <select value={vacationForm.workerId} onChange={e => setVacationForm({...vacationForm, workerId: e.target.value})} className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl font-bold text-slate-800 text-sm shadow-inner appearance-none">
+          <option value="">Seleccione Colaborador...</option>
+          {activeEmployees.map((e:any) => <option key={e.id} value={e.id}>{e.rut} - {e.firstName} {e.lastName} (Saldo: {e.vacationDaysRemaining.toFixed(1)})</option>)}
+        </select>
+        <div className="grid grid-cols-2 gap-6"><FormGroup label="Desde" type="date" value={vacationForm.startDate} onChange={(v:any)=>setVacationForm({...vacationForm, startDate: v})} /><FormGroup label="Hasta" type="date" value={vacationForm.endDate} onChange={(v:any)=>setVacationForm({...vacationForm, endDate: v})} /></div>
+        <FormGroup label="Días a Rebajar" type="number" value={vacationForm.daysTaken} onChange={(v:any)=>setVacationForm({...vacationForm, daysTaken: Number(v)})} />
+        <button type="submit" className="w-full py-6 bg-amber-500 text-white rounded-[2rem] font-black uppercase">Registrar Periodo</button>
+      </form>
+    </div>
+  </div>
+);
+
+const FiniquitoModal = ({ onClose, activeEmployees, finiquitoForm, setFiniquitoForm, onSave }: any) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center p-8 bg-slate-950/80 backdrop-blur-md">
+    <div className="bg-white w-full max-w-3xl rounded-[3rem] p-12 relative overflow-y-auto max-h-[90vh]">
+      <button onClick={onClose} className="absolute top-8 right-8 p-3 hover:bg-slate-100 rounded-full"><X className="w-8 h-8" /></button>
+      <h2 className="text-3xl font-black uppercase italic mb-10">Término de Relación Laboral</h2>
+      <form onSubmit={onSave} className="space-y-8">
+        <div className="grid grid-cols-2 gap-6">
+          <select value={finiquitoForm.employeeId} onChange={e => setFiniquitoForm({...finiquitoForm, employeeId: e.target.value})} className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl font-bold text-slate-800 text-sm shadow-inner appearance-none"><option value="">Seleccione Colaborador...</option>{activeEmployees.map((e:any) => <option key={e.id} value={e.id}>{e.rut} - {e.firstName} {e.lastName}</option>)}</select>
+          <FormGroup label="Fecha Término" type="date" value={finiquitoForm.terminationDate} onChange={(v:any) => setFiniquitoForm({...finiquitoForm, terminationDate: v})} />
+        </div>
+        <select value={finiquitoForm.cause} onChange={e => setFiniquitoForm({...finiquitoForm, cause: e.target.value})} className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl font-bold text-slate-800 text-sm shadow-inner">{TERMINATION_CAUSES.map(c => <option key={c} value={c}>{c}</option>)}</select>
+        <div className="grid grid-cols-3 gap-6">
+          <FormGroup label="Años Servicio ($)" type="number" value={finiquitoForm.yearsOfServiceIndemnity} onChange={(v:any) => setFiniquitoForm({...finiquitoForm, yearsOfServiceIndemnity: Number(v)})} />
+          <FormGroup label="Vacaciones ($)" type="number" value={finiquitoForm.vacationIndemnity} onChange={(v:any) => setFiniquitoForm({...finiquitoForm, vacationIndemnity: Number(v)})} />
+          <FormGroup label="Aviso Previo ($)" type="number" value={finiquitoForm.noticeIndemnity} onChange={(v:any) => setFiniquitoForm({...finiquitoForm, noticeIndemnity: Number(v)})} />
+        </div>
+        <div className="p-8 bg-rose-50 rounded-2xl text-rose-800 font-black text-center text-xl border border-rose-100">Total Pago: ${((finiquitoForm.yearsOfServiceIndemnity || 0) + (finiquitoForm.vacationIndemnity || 0) + (finiquitoForm.noticeIndemnity || 0)).toLocaleString()}</div>
+        <button type="submit" className="w-full py-6 bg-rose-600 text-white rounded-2xl font-black uppercase">Confirmar Desvinculación</button>
+      </form>
+    </div>
   </div>
 );
 
