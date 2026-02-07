@@ -12,21 +12,47 @@ export enum ContractType {
   PROJECT = 'Por Obra o Faena'
 }
 
-export enum TerminationReason {
-  ART159_1 = 'Art. 159 N°1 - Mutuo acuerdo',
-  ART159_2 = 'Art. 159 N°2 - Renuncia del trabajador',
-  ART159_4 = 'Art. 159 N°4 - Vencimiento del plazo',
-  ART159_5 = 'Art. 159 N°5 - Conclusión del trabajo',
-  ART160 = 'Art. 160 - Conductas indebidas',
-  ART161 = 'Art. 161 - Necesidades de la empresa'
+export enum DocumentType {
+  PAYSLIP = 'Liquidación de Sueldo',
+  CONTRACT = 'Contrato de Trabajo',
+  CERTIFICATE_TENURE = 'Certificado de Antigüedad',
+  CERTIFICATE_INCOME = 'Certificado de Renta',
+  FINIQUITO = 'Finiquito'
 }
 
-export interface Company {
+export interface LaborDocument {
   id: string;
-  rut: string;
-  name: string;
-  address: string;
-  activityCode: string;
+  employeeId: string;
+  type: DocumentType;
+  issueDate: string;
+  period: string;
+  verificationCode: string;
+  status: 'SIGNED' | 'DRAFT';
+}
+
+export interface ApiLog {
+  id: string;
+  timestamp: string;
+  endpoint: string;
+  status: 'SUCCESS' | 'ERROR' | 'PENDING';
+  message: string;
+}
+
+export interface BankData {
+  bankName: string;
+  accountType: 'Vista' | 'Corriente' | 'Ahorro';
+  accountNumber: string;
+}
+
+// Added missing Loan interface
+export interface Loan {
+  id: string;
+  employeeId: string;
+  totalAmount: number;
+  monthlyAmount: number;
+  remainingAmount: number;
+  installments: number;
+  paidInstallments: number;
 }
 
 export interface Employee {
@@ -40,15 +66,14 @@ export interface Employee {
   position: string;
   costCenterId: string;
   supervisorId?: string;
-  // Campos nuevos según guía 4.4.1
   startDate: string;
   contractType: ContractType;
   afpName: string;
-  healthName: string; // Fonasa o Isapre
-  healthPlanValue?: number; // En UF si es Isapre
+  healthName: string;
+  healthPlanValue?: number;
   isActive: boolean;
+  bankData?: BankData; // Cap 9.2
   terminationDate?: string;
-  terminationReason?: TerminationReason;
 }
 
 export interface PayrollResult {
@@ -58,10 +83,11 @@ export interface PayrollResult {
   year: number;
   grossSalary: number;
   taxableSalary: number;
-  legalGratification: number; // Art 47
+  legalGratification: number;
   afpAmount: number;
   healthAmount: number;
   taxAmount: number;
+  loanDeduction: number;
   netSalary: number;
   costCenterId: string;
   bonuses: number;
@@ -80,10 +106,11 @@ export interface MonthlyParameters {
   lastFolio?: number;
 }
 
-export interface AccountingItem {
-  accountCode: string;
-  accountName: string;
-  debit: number;
-  credit: number;
-  costCenter: string;
+export interface Company {
+  id: string;
+  rut: string;
+  name: string;
+  address: string;
+  activityCode: string;
+  apiKey?: string; // Cap 9.1
 }

@@ -1,35 +1,37 @@
 
-import { Employee, MonthlyParameters, PayrollResult } from '../types';
+import { Employee, MonthlyParameters, PayrollResult, Loan } from '../types';
 
 export const calculatePayroll = (
   employee: Employee,
-  params: MonthlyParameters
+  params: MonthlyParameters,
+  activeLoans: Loan[] = []
 ): PayrollResult => {
   const baseSalary = employee.baseSalary;
   
-  // Gratificación Legal (Art 47): 25% del sueldo imponible con tope de 4.75 IMM / 12 meses
+  // Gratificación Legal Art 47
   const monthlyGratificationCap = (params.imm * 4.75) / 12;
   const rawGratification = baseSalary * 0.25;
   const legalGratification = Math.min(rawGratification, monthlyGratificationCap);
 
   const taxableSalary = baseSalary + legalGratification;
-  const taxableCap = params.uf * 81.6; // Tope Imponible aproximado
+  const taxableCap = params.uf * 81.6;
   const finalTaxable = Math.min(taxableSalary, taxableCap);
   
-  // AFP (Promedio 11.5%)
-  const afpAmount = finalTaxable * 0.115;
+  // AFP y Salud
+  const afpAmount = Math.round(finalTaxable * 0.115);
+  const healthAmount = Math.round(finalTaxable * 0.07);
   
-  // Salud (7% Fonasa o Isapre)
-  const healthAmount = finalTaxable * 0.07;
+  // Préstamos (Cap 6.3)
+  const loanDeduction = activeLoans.reduce((acc, l) => acc + (l.remainingAmount > 0 ? l.monthlyAmount : 0), 0);
   
-  // Impuesto de Segunda Categoría (Simplificado para el demo)
+  // Impuesto 2da Categoría
   const taxBase = finalTaxable - afpAmount - healthAmount;
   let taxAmount = 0;
   if (taxBase > params.utm * 13.5) {
-    taxAmount = (taxBase - (params.utm * 13.5)) * 0.04;
+    taxAmount = Math.round((taxBase - (params.utm * 13.5)) * 0.04);
   }
 
-  const netSalary = taxableSalary - afpAmount - healthAmount - taxAmount;
+  const netSalary = taxableSalary - afpAmount - healthAmount - taxAmount - loanDeduction;
 
   return {
     id: crypto.randomUUID(),
@@ -42,6 +44,7 @@ export const calculatePayroll = (
     afpAmount,
     healthAmount,
     taxAmount,
+    loanDeduction,
     netSalary,
     costCenterId: employee.costCenterId,
     bonuses: 0,
