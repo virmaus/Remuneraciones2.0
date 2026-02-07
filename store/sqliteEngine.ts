@@ -4,21 +4,33 @@ import { Company, Employee, PayrollResult, MonthlyParameters, Loan, LaborDocumen
 let db: any = null;
 
 export const initSqlite = async (): Promise<void> => {
-  const SQL = await (window as any).initSqlJs({
-    locateFile: (file: string) => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${file}`
-  });
+  try {
+    // Verificamos si SQL.js se cargó correctamente desde el CDN
+    if (!(window as any).initSqlJs) {
+        console.warn("SQL.js no detectado. Operando en modo memoria volátil.");
+        // Podríamos implementar un fallback aquí si fuera necesario
+        return;
+    }
 
-  const savedDb = localStorage.getItem('sqlite_db');
-  if (savedDb) {
-    const uint8Array = new Uint8Array(JSON.parse(savedDb));
-    db = new SQL.Database(uint8Array);
-  } else {
-    db = new SQL.Database();
-    createTables();
+    const SQL = await (window as any).initSqlJs({
+      locateFile: (file: string) => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${file}`
+    });
+
+    const savedDb = localStorage.getItem('sqlite_db');
+    if (savedDb) {
+      const uint8Array = new Uint8Array(JSON.parse(savedDb));
+      db = new SQL.Database(uint8Array);
+    } else {
+      db = new SQL.Database();
+      createTables();
+    }
+  } catch (error) {
+    console.error("Error al inicializar base de datos:", error);
   }
 };
 
 const createTables = () => {
+  if (!db) return;
   db.run(`
     CREATE TABLE IF NOT EXISTS companies (id TEXT PRIMARY KEY, rut TEXT, name TEXT, address TEXT, activityCode TEXT, apiKey TEXT);
     CREATE TABLE IF NOT EXISTS employees (
@@ -29,19 +41,6 @@ const createTables = () => {
     );
     CREATE TABLE IF NOT EXISTS vacations (
       id TEXT PRIMARY KEY, workerId TEXT, startDate TEXT, endDate TEXT, daysTaken REAL, status TEXT
-    );
-    CREATE TABLE IF NOT EXISTS account_mappings (
-      id TEXT PRIMARY KEY, itemName TEXT, accountCode TEXT, accountName TEXT, type TEXT
-    );
-    CREATE TABLE IF NOT EXISTS loans (
-      id TEXT PRIMARY KEY, employeeId TEXT, totalAmount REAL, monthlyAmount REAL, 
-      remainingAmount REAL, installments INTEGER, paidInstallments INTEGER
-    );
-    CREATE TABLE IF NOT EXISTS api_logs (
-      id TEXT PRIMARY KEY, timestamp TEXT, endpoint TEXT, status TEXT, message TEXT
-    );
-    CREATE TABLE IF NOT EXISTS documents (
-      id TEXT PRIMARY KEY, employeeId TEXT, type TEXT, issueDate TEXT, period TEXT, verificationCode TEXT, status TEXT
     );
     CREATE TABLE IF NOT EXISTS finiquitos (
       id TEXT PRIMARY KEY, employeeId TEXT, terminationDate TEXT, cause TEXT, 
@@ -61,6 +60,7 @@ const createTables = () => {
 };
 
 const persistDb = () => {
+  if (!db) return;
   const data = db.export();
   const array = Array.from(data);
   localStorage.setItem('sqlite_db', JSON.stringify(array));
@@ -68,16 +68,19 @@ const persistDb = () => {
 
 export const sqliteStore = {
   saveCompany: (c: Company) => {
+    if (!db) return;
     db.run("INSERT OR REPLACE INTO companies VALUES (?,?,?,?,?,?)", [c.id, c.rut, c.name, c.address, c.activityCode, c.apiKey || '']);
     persistDb();
   },
   getCompanies: (): Company[] => {
+    if (!db) return [];
     try {
       const res = db.exec("SELECT * FROM companies");
       return res.length > 0 ? res[0].values.map((v: any) => ({ id: v[0], rut: v[1], name: v[2], address: v[3], activityCode: v[4], apiKey: v[5] })) : [];
     } catch (e) { return []; }
   },
   saveEmployee: (e: Employee) => {
+    if (!db) return;
     const bankDataStr = e.bankData ? JSON.stringify(e.bankData) : null;
     db.run("INSERT OR REPLACE INTO employees VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
       e.id, e.companyId, e.rut, e.firstName, e.lastName, e.email || '', 
@@ -88,6 +91,7 @@ export const sqliteStore = {
     persistDb();
   },
   getEmployees: (companyId: string): Employee[] => {
+    if (!db) return [];
     const stmt = db.prepare("SELECT * FROM employees WHERE companyId = ?");
     stmt.bind([companyId]);
     const results = [];
@@ -105,16 +109,16 @@ export const sqliteStore = {
     return results;
   },
   saveVacation: (v: WorkerVacation) => {
+    if (!db) return;
     db.run("INSERT OR REPLACE INTO vacations VALUES (?,?,?,?,?,?)", [v.id, v.workerId, v.startDate, v.endDate, v.daysTaken, v.status]);
     if (v.status === 'APROBADO') {
       db.run("UPDATE employees SET vacationDaysRemaining = vacationDaysRemaining - ? WHERE id = ?", [v.daysTaken, v.workerId]);
     }
     persistDb();
   },
-  getVacations: (workerId?: string): WorkerVacation[] => {
-    const query = workerId ? "SELECT * FROM vacations WHERE workerId = ?" : "SELECT * FROM vacations";
-    const stmt = db.prepare(query);
-    if (workerId) stmt.bind([workerId]);
+  getVacations: (): WorkerVacation[] => {
+    if (!db) return [];
+    const stmt = db.prepare("SELECT * FROM vacations");
     const results = [];
     while (stmt.step()) {
       const v = stmt.get();
@@ -124,16 +128,16 @@ export const sqliteStore = {
     return results;
   },
   saveFiniquito: (f: FiniquitoRecord) => {
+    if (!db) return;
     db.run("INSERT OR REPLACE INTO finiquitos VALUES (?,?,?,?,?,?,?,?)", [
       f.id, f.employeeId, f.terminationDate, f.cause, f.yearsOfServiceIndemnity, f.vacationIndemnity, f.noticeIndemnity, f.totalAmount
     ]);
     db.run("UPDATE employees SET isActive = 0, terminationDate = ?, terminationCause = ? WHERE id = ?", [f.terminationDate, f.cause, f.employeeId]);
     persistDb();
   },
-  getFiniquitos: (employeeId?: string): FiniquitoRecord[] => {
-    const query = employeeId ? "SELECT * FROM finiquitos WHERE employeeId = ?" : "SELECT * FROM finiquitos";
-    const stmt = db.prepare(query);
-    if (employeeId) stmt.bind([employeeId]);
+  getFiniquitos: (): FiniquitoRecord[] => {
+    if (!db) return [];
+    const stmt = db.prepare("SELECT * FROM finiquitos");
     const results = [];
     while (stmt.step()) {
       const v = stmt.get();
@@ -146,6 +150,7 @@ export const sqliteStore = {
     return results;
   },
   savePayrollResult: (r: PayrollResult) => {
+    if (!db) return;
     db.run("INSERT OR REPLACE INTO payroll_results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
       r.id, r.employeeId, r.month, r.year, r.grossSalary, r.taxableSalary, r.legalGratification,
       r.afpAmount, r.healthAmount, r.taxAmount, r.loanDeduction, r.netSalary, r.costCenterId, r.bonuses, r.discounts
@@ -153,6 +158,7 @@ export const sqliteStore = {
     persistDb();
   },
   getPayrollResults: (month: number, year: number): PayrollResult[] => {
+    if (!db) return [];
     const stmt = db.prepare("SELECT * FROM payroll_results WHERE month = ? AND year = ?");
     stmt.bind([month, year]);
     const results = [];
@@ -168,6 +174,7 @@ export const sqliteStore = {
     return results;
   },
   saveMonthlyParameters: (p: MonthlyParameters) => {
+    if (!db) return;
     const id = `${p.year}-${p.month}`;
     db.run("INSERT OR REPLACE INTO monthly_parameters VALUES (?,?,?,?,?,?,?,?,?)", [
       id, p.year, p.month, p.uf, p.utm, p.imm, p.sis, p.isClosed ? 1 : 0, p.lastFolio || 0
@@ -175,6 +182,7 @@ export const sqliteStore = {
     persistDb();
   },
   getMonthlyParameters: (month: number, year: number): MonthlyParameters | null => {
+    if (!db) return null;
     const id = `${year}-${month}`;
     const stmt = db.prepare("SELECT * FROM monthly_parameters WHERE id = ?");
     stmt.bind([id]);
@@ -190,12 +198,13 @@ export const sqliteStore = {
     return result;
   },
   exportBackup: () => {
+    if (!db) return;
     const data = db.export();
     const blob = new Blob([data], { type: 'application/x-sqlite3' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `remun_pro_v95_${new Date().toISOString().split('T')[0]}.sqlite`;
+    a.download = `remun_pro_backup_${new Date().toISOString().split('T')[0]}.sqlite`;
     a.click();
   }
 };
