@@ -6,6 +6,21 @@ export enum MovementType {
   FINIQUITO = 'FINIQUITO'
 }
 
+export enum ContractType {
+  INDEFINITE = 'Indefinido',
+  FIXED_TERM = 'Plazo Fijo',
+  PROJECT = 'Por Obra o Faena'
+}
+
+export enum TerminationReason {
+  ART159_1 = 'Art. 159 N°1 - Mutuo acuerdo',
+  ART159_2 = 'Art. 159 N°2 - Renuncia del trabajador',
+  ART159_4 = 'Art. 159 N°4 - Vencimiento del plazo',
+  ART159_5 = 'Art. 159 N°5 - Conclusión del trabajo',
+  ART160 = 'Art. 160 - Conductas indebidas',
+  ART161 = 'Art. 161 - Necesidades de la empresa'
+}
+
 export interface Company {
   id: string;
   rut: string;
@@ -25,6 +40,15 @@ export interface Employee {
   position: string;
   costCenterId: string;
   supervisorId?: string;
+  // Campos nuevos según guía 4.4.1
+  startDate: string;
+  contractType: ContractType;
+  afpName: string;
+  healthName: string; // Fonasa o Isapre
+  healthPlanValue?: number; // En UF si es Isapre
+  isActive: boolean;
+  terminationDate?: string;
+  terminationReason?: TerminationReason;
 }
 
 export interface PayrollResult {
@@ -34,6 +58,7 @@ export interface PayrollResult {
   year: number;
   grossSalary: number;
   taxableSalary: number;
+  legalGratification: number; // Art 47
   afpAmount: number;
   healthAmount: number;
   taxAmount: number;
@@ -61,22 +86,4 @@ export interface AccountingItem {
   debit: number;
   credit: number;
   costCenter: string;
-}
-
-export interface Loan {
-  id: string;
-  employeeId: string;
-  totalAmount: number;
-  remainingAmount: number;
-  installments: number;
-  monthlyAmount: number;
-  startDate: string;
-}
-
-export interface Vacation {
-  id: string;
-  employeeId: string;
-  startDate: string;
-  endDate: string;
-  daysTaken: number;
 }

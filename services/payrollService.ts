@@ -5,57 +5,46 @@ export const calculatePayroll = (
   employee: Employee,
   params: MonthlyParameters
 ): PayrollResult => {
-  // Basic Chilean Payroll Calculation Logic
-  const grossSalary = employee.baseSalary; // Simple version
-  const taxableSalary = Math.min(grossSalary, params.uf * 81.6); // Top taxable 2024 approx
+  const baseSalary = employee.baseSalary;
   
-  // AFP (Average 11.5%)
-  const afpAmount = taxableSalary * 0.115;
+  // Gratificación Legal (Art 47): 25% del sueldo imponible con tope de 4.75 IMM / 12 meses
+  const monthlyGratificationCap = (params.imm * 4.75) / 12;
+  const rawGratification = baseSalary * 0.25;
+  const legalGratification = Math.min(rawGratification, monthlyGratificationCap);
+
+  const taxableSalary = baseSalary + legalGratification;
+  const taxableCap = params.uf * 81.6; // Tope Imponible aproximado
+  const finalTaxable = Math.min(taxableSalary, taxableCap);
   
-  // Health (7% or Isapre Plan)
-  const healthAmount = taxableSalary * 0.07;
+  // AFP (Promedio 11.5%)
+  const afpAmount = finalTaxable * 0.115;
   
-  // Simple Tax (Tax bracket logic usually goes here)
-  const taxBase = taxableSalary - afpAmount - healthAmount;
+  // Salud (7% Fonasa o Isapre)
+  const healthAmount = finalTaxable * 0.07;
+  
+  // Impuesto de Segunda Categoría (Simplificado para el demo)
+  const taxBase = finalTaxable - afpAmount - healthAmount;
   let taxAmount = 0;
   if (taxBase > params.utm * 13.5) {
-    taxAmount = taxBase * 0.04; // Very simplified tax bracket
+    taxAmount = (taxBase - (params.utm * 13.5)) * 0.04;
   }
 
-  const netSalary = grossSalary - afpAmount - healthAmount - taxAmount;
+  const netSalary = taxableSalary - afpAmount - healthAmount - taxAmount;
 
   return {
     id: crypto.randomUUID(),
     employeeId: employee.id,
     month: params.month,
     year: params.year,
-    grossSalary,
-    taxableSalary,
+    grossSalary: taxableSalary,
+    taxableSalary: finalTaxable,
+    legalGratification,
     afpAmount,
     healthAmount,
     taxAmount,
     netSalary,
-    // Fix: costCenterId property now exists in PayrollResult type
     costCenterId: employee.costCenterId,
-    // Add default values for required properties bonuses and discounts
     bonuses: 0,
     discounts: 0
-  };
-};
-
-export const generateAccountingVoucher = (results: PayrollResult[]): any => {
-  // Group by cost center for centralization logic
-  const totalGross = results.reduce((acc, r) => acc + r.grossSalary, 0);
-  const totalNet = results.reduce((acc, r) => acc + r.netSalary, 0);
-  const totalRetention = totalGross - totalNet;
-
-  return {
-    type: 'TRASPASO',
-    description: 'Centralización Remuneraciones Mensual',
-    items: [
-      { accountCode: '5.1.01', debit: totalGross, credit: 0, description: 'Gasto Remuneraciones' },
-      { accountCode: '2.1.05', debit: 0, credit: totalRetention, description: 'Leyes Sociales por Pagar' },
-      { accountCode: '2.1.06', debit: 0, credit: totalNet, description: 'Sueldos por Pagar' }
-    ]
   };
 };
