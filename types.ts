@@ -68,8 +68,12 @@ export interface Employee {
   costCenterId: string;
   startDate: string;
   contractType: string;
+  contractSubtype?: string;
+  jornada: number; // Horas semanales
   afpName: string;
+  afpCode?: string;
   healthName: string;
+  healthCode?: string;
   isActive: boolean;
   vacationDaysRemaining: number;
   syncStatus: 'SYNCED' | 'PENDING';
@@ -77,9 +81,14 @@ export interface Employee {
   medicalLeaveDays?: number;
   unpaidLeaveDays?: number;
   supervisorId?: string;
-  bankData?: any;
+  bankData?: {
+    bankName: string;
+    accountType: string;
+    accountNumber: string;
+  };
   terminationDate?: string;
   terminationCause?: string;
+  previredCodes?: Record<string, string>;
 }
 
 export interface PayrollResult {
@@ -102,6 +111,13 @@ export interface PayrollResult {
   absenteeismDays: number;
   medicalLeaveDays: number;
   unpaidLeaveDays: number;
+  version: number;
+  audit?: {
+    calculatedAt: string;
+    calculatedBy: string;
+    signedAt?: string;
+    signedBy?: string;
+  };
 }
 
 export interface MonthlyParameters {

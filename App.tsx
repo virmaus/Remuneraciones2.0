@@ -10,9 +10,12 @@ import {
 } from 'lucide-react';
 import { ModuleType, Employee, MonthlyParameters, PayrollResult, Company, FiniquitoRecord, WorkerVacation } from './types';
 import { sqliteStore, initSqlite } from './store/sqliteEngine';
-import { calculatePayroll } from './services/payrollService';
+import { runPayrollV2 } from './services/payrollEngine';
 import { Dashboard } from './components/Dashboard';
 import { AccountingExport } from './components/AccountingExport';
+import { validateRut, normalizeRut, cleanRut } from './utils/rutUtils';
+import { PreviredExporter } from './export/previred';
+import { generatePayslipHTML, printPayslip } from './utils/payslipGenerator';
 
 const TERMINATION_CAUSES = [
   "Art. 159 N°1 - Mutuo acuerdo de las partes",
@@ -52,7 +55,8 @@ const App: React.FC = () => {
 
   const [newEmp, setNewEmp] = useState<Partial<Employee>>({
     rut: '', firstName: '', lastName: '', baseSalary: 500000, position: '', costCenterId: 'ADM-01',
-    afpName: 'HABITAT', healthName: 'FONASA', contractType: 'INDEFINIDO', vacationDaysRemaining: 15
+    afpName: 'HABITAT', afpCode: '01', healthName: 'FONASA', healthCode: '01', 
+    contractType: 'INDEFINIDO', jornada: 45, vacationDaysRemaining: 15
   });
 
   const [vacationForm, setVacationForm] = useState<Partial<WorkerVacation>>({
@@ -133,12 +137,27 @@ const App: React.FC = () => {
     if (params.isClosed) return alert("El periodo está cerrado.");
     employees.forEach(emp => {
       if (emp.isActive) {
-        const res = calculatePayroll(emp, params);
+        const res = runPayrollV2(emp, params);
         sqliteStore.savePayrollResult(res);
       }
     });
     refreshData();
-    alert("Cálculo masivo finalizado.");
+    alert("Cálculo masivo finalizado con Aritmética Exacta (Big.js).");
+  };
+
+  const handleExportPrevired = () => {
+    if (!selectedCompany) return;
+    const exporter = new PreviredExporter(employees, payrollResults, selectedCompany, params);
+    exporter.download();
+  };
+
+  const handlePrintPayslip = (res: PayrollResult) => {
+    if (!selectedCompany) return;
+    const emp = employees.find(e => e.id === res.employeeId);
+    if (emp) {
+      const html = generatePayslipHTML(emp, res, selectedCompany, params);
+      printPayslip(html);
+    }
   };
 
   const handleSaveVacation = (e: React.FormEvent) => {
@@ -440,7 +459,10 @@ const App: React.FC = () => {
                 </div>
                 <div className="bg-indigo-50 p-8 rounded-[2.5rem] border-2 border-indigo-100 flex flex-col justify-between">
                    <div><h3 className="text-lg font-black uppercase italic text-indigo-900">Motor de Cálculo Offline</h3><p className="text-xs font-medium text-indigo-700/80 leading-relaxed">Procesamiento de liquidaciones considerando inasistencias y licencias.</p></div>
-                   <button onClick={handleRunPayroll} disabled={params.isClosed} className="w-full py-6 bg-indigo-600 text-white rounded-2xl text-xs font-black uppercase shadow-xl hover:bg-indigo-700 transition-all active:scale-95 disabled:opacity-50">Ejecutar Cálculo Masivo</button>
+                   <div className="flex gap-4">
+                     <button onClick={handleRunPayroll} disabled={params.isClosed} className="flex-1 py-6 bg-indigo-600 text-white rounded-2xl text-xs font-black uppercase shadow-xl hover:bg-indigo-700 transition-all active:scale-95 disabled:opacity-50">Ejecutar Cálculo</button>
+                     <button onClick={handleExportPrevired} className="flex-1 py-6 bg-slate-900 text-white rounded-2xl text-xs font-black uppercase shadow-xl hover:bg-black transition-all active:scale-95">Exportar Previred</button>
+                   </div>
                 </div>
               </div>
             </div>
@@ -449,7 +471,7 @@ const App: React.FC = () => {
           {activeTab === ModuleType.LIQUIDACIONES && (
              <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                <h2 className="text-3xl font-black uppercase italic tracking-tighter">Liquidaciones Emitidas</h2>
-               <PayrollTable results={payrollResults} employees={employees} />
+                <PayrollTable results={payrollResults} employees={employees} onPrint={handlePrintPayslip} />
              </div>
           )}
         </div>
@@ -458,7 +480,28 @@ const App: React.FC = () => {
       {/* Modals con estilos consistentes */}
       {showCompanyModal && <CompanyModal onClose={() => setShowCompanyModal(false)} companies={companies} selectedCompany={selectedCompany} onSelect={(c:any) => { setSelectedCompany(c); setShowCompanyModal(false); refreshData(); }} onSave={(e:any) => { e.preventDefault(); const comp: Company = {...newCompany as Company, id: crypto.randomUUID()}; sqliteStore.saveCompany(comp); setCompanies([...companies, comp]); setSelectedCompany(comp); setShowCompanyModal(false); }} newCompany={newCompany} setNewCompany={setNewCompany} />}
       {showPeriodModal && <PeriodModal onClose={() => setShowPeriodModal(false)} params={params} onUpdate={(m:any, y:any) => { loadPeriodData(m, y); setShowPeriodModal(false); }} />}
-      {showAddModal && <AddEmployeeModal onClose={() => setShowAddModal(false)} newEmp={newEmp} setNewEmp={setNewEmp} onSave={(e:any) => { e.preventDefault(); const emp: Employee = {...newEmp as Employee, id: crypto.randomUUID(), companyId: selectedCompany!.id, startDate: new Date().toISOString().split('T')[0], isActive: true, vacationDaysRemaining: 15, syncStatus: 'PENDING'}; sqliteStore.saveEmployee(emp); setShowAddModal(false); refreshData(); }} />}
+      {showAddModal && <AddEmployeeModal onClose={() => setShowAddModal(false)} newEmp={newEmp} setNewEmp={setNewEmp} onSave={(e:any) => { 
+        e.preventDefault(); 
+        if (!newEmp.rut || !validateRut(newEmp.rut)) {
+          return alert("RUT inválido. Por favor verifique.");
+        }
+        const emp: Employee = {
+          ...newEmp as Employee, 
+          id: crypto.randomUUID(), 
+          companyId: selectedCompany!.id, 
+          rut: normalizeRut(newEmp.rut),
+          startDate: new Date().toISOString().split('T')[0], 
+          isActive: true, 
+          vacationDaysRemaining: 15, 
+          syncStatus: 'PENDING',
+          jornada: newEmp.jornada || 45,
+          afpCode: newEmp.afpCode || '01',
+          healthCode: newEmp.healthCode || '01'
+        }; 
+        sqliteStore.saveEmployee(emp); 
+        setShowAddModal(false); 
+        refreshData(); 
+      }} />}
       {showVacationModal && <VacationModal onClose={() => setShowVacationModal(false)} activeEmployees={activeEmployees} vacationForm={vacationForm} setVacationForm={setVacationForm} onSave={handleSaveVacation} />}
       {showFiniquitoModal && <FiniquitoModal onClose={() => setShowFiniquitoModal(false)} activeEmployees={activeEmployees} finiquitoForm={finiquitoForm} setFiniquitoForm={setFiniquitoForm} onSave={handleSaveFiniquito} />}
     </div>
@@ -525,7 +568,7 @@ const FiniquitoTable = ({ finiquitos, employees }: { finiquitos: FiniquitoRecord
   </div>
 );
 
-const PayrollTable = ({ results, employees }: { results: PayrollResult[], employees: Employee[] }) => (
+const PayrollTable = ({ results, employees, onPrint }: { results: PayrollResult[], employees: Employee[], onPrint: (res: PayrollResult) => void }) => (
   <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
     <table className="w-full text-left text-xs">
       <thead className="bg-slate-50 text-slate-500 font-black uppercase border-b">
@@ -555,7 +598,14 @@ const PayrollTable = ({ results, employees }: { results: PayrollResult[], employ
                 <td className="px-8 py-6 text-center font-bold text-slate-500">{workedDays}</td>
                 <td className="px-8 py-6 text-right font-bold text-slate-600">${res.grossSalary.toLocaleString()}</td>
                 <td className="px-8 py-6 text-right font-black text-indigo-600">${res.netSalary.toLocaleString()}</td>
-                <td className="px-8 py-6 text-center"><button className="px-4 py-2 bg-slate-900 text-white rounded-xl text-[9px] font-black uppercase hover:bg-indigo-600 transition-all shadow-md">PDF</button></td>
+                <td className="px-8 py-6 text-center">
+                  <button 
+                    onClick={() => onPrint(res)}
+                    className="px-4 py-2 bg-slate-900 text-white rounded-xl text-[9px] font-black uppercase hover:bg-indigo-600 transition-all shadow-md"
+                  >
+                    PDF
+                  </button>
+                </td>
               </tr>
             );
         })}
@@ -639,12 +689,27 @@ const PeriodModal = ({ onClose, params, onUpdate }: any) => (
 
 const AddEmployeeModal = ({ onClose, newEmp, setNewEmp, onSave }: any) => (
   <div className="fixed inset-0 z-50 flex items-center justify-center p-8 bg-slate-950/80 backdrop-blur-md">
-    <div className="bg-white w-full max-w-2xl rounded-[3rem] p-12 relative shadow-2xl">
+    <div className="bg-white w-full max-w-3xl rounded-[3rem] p-12 relative shadow-2xl max-h-[90vh] overflow-y-auto">
       <button onClick={onClose} className="absolute top-8 right-8 p-3 hover:bg-slate-100 rounded-full"><X className="w-8 h-8 text-slate-400" /></button>
       <h2 className="text-3xl font-black uppercase italic mb-10 tracking-tighter">Contratación Local</h2>
       <form onSubmit={onSave} className="space-y-6">
-        <div className="grid grid-cols-2 gap-6"><FormGroup label="RUT" value={newEmp.rut} onChange={(v:any)=>setNewEmp({...newEmp, rut: v})} placeholder="12.xxx.xxx-x" /><FormGroup label="Sueldo Base ($)" type="number" value={newEmp.baseSalary} onChange={(v:any)=>setNewEmp({...newEmp, baseSalary: Number(v)})} /></div>
-        <div className="grid grid-cols-2 gap-6"><FormGroup label="Nombres" value={newEmp.firstName} onChange={(v:any)=>setNewEmp({...newEmp, firstName: v})} /><FormGroup label="Apellidos" value={newEmp.lastName} onChange={(v:any)=>setNewEmp({...newEmp, lastName: v})} /></div>
+        <div className="grid grid-cols-2 gap-6">
+          <FormGroup label="RUT" value={newEmp.rut} onChange={(v:any)=>setNewEmp({...newEmp, rut: v})} placeholder="12.xxx.xxx-x" />
+          <FormGroup label="Sueldo Base ($)" type="number" value={newEmp.baseSalary} onChange={(v:any)=>setNewEmp({...newEmp, baseSalary: Number(v)})} />
+        </div>
+        <div className="grid grid-cols-2 gap-6">
+          <FormGroup label="Nombres" value={newEmp.firstName} onChange={(v:any)=>setNewEmp({...newEmp, firstName: v})} />
+          <FormGroup label="Apellidos" value={newEmp.lastName} onChange={(v:any)=>setNewEmp({...newEmp, lastName: v})} />
+        </div>
+        <div className="grid grid-cols-3 gap-6">
+          <FormGroup label="AFP" value={newEmp.afpName} onChange={(v:any)=>setNewEmp({...newEmp, afpName: v})} />
+          <FormGroup label="Cod. AFP" value={newEmp.afpCode} onChange={(v:any)=>setNewEmp({...newEmp, afpCode: v})} />
+          <FormGroup label="Jornada (Hrs)" type="number" value={newEmp.jornada} onChange={(v:any)=>setNewEmp({...newEmp, jornada: Number(v)})} />
+        </div>
+        <div className="grid grid-cols-2 gap-6">
+          <FormGroup label="Salud" value={newEmp.healthName} onChange={(v:any)=>setNewEmp({...newEmp, healthName: v})} />
+          <FormGroup label="Cod. Salud" value={newEmp.healthCode} onChange={(v:any)=>setNewEmp({...newEmp, healthCode: v})} />
+        </div>
         <button type="submit" className="w-full py-6 bg-indigo-600 text-white rounded-[2rem] font-black uppercase text-xs tracking-widest hover:bg-indigo-700 transition-all mt-6 shadow-xl shadow-indigo-600/20 italic">Registrar Nueva Ficha</button>
       </form>
     </div>
