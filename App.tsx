@@ -11,6 +11,8 @@ import {
 import { ModuleType, Employee, MonthlyParameters, PayrollResult, Company, FiniquitoRecord, WorkerVacation } from './types';
 import { sqliteStore, initSqlite } from './store/sqliteEngine';
 import { calculatePayroll } from './services/payrollService';
+import { Dashboard } from './components/Dashboard';
+import { AccountingExport } from './components/AccountingExport';
 
 const TERMINATION_CAUSES = [
   "Art. 159 N°1 - Mutuo acuerdo de las partes",
@@ -206,6 +208,7 @@ const App: React.FC = () => {
           <SidebarItem active={activeTab === ModuleType.RRHH} onClick={() => setActiveTab(ModuleType.RRHH)} icon={Umbrella} label="Vacaciones" />
           <SidebarItem active={activeTab === ModuleType.FINIQUITOS} onClick={() => setActiveTab(ModuleType.FINIQUITOS)} icon={UserMinus} label="Finiquitos" />
           <SidebarItem active={activeTab === ModuleType.PROCESOS} onClick={() => setActiveTab(ModuleType.PROCESOS)} icon={Layers} label="Procesos Cierre" />
+          <SidebarItem active={activeTab === ModuleType.CONTABILIDAD} onClick={() => setActiveTab(ModuleType.CONTABILIDAD)} icon={Landmark} label="Contabilidad" />
         </nav>
         <div className="p-4 bg-slate-900/50 border-t border-white/5 space-y-3">
           <button onClick={checkGitHubUpdates} disabled={isUpdating} className="w-full py-2.5 bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 rounded-lg text-[10px] font-black uppercase flex items-center justify-center gap-2 transition-all hover:bg-indigo-600/30">
@@ -240,11 +243,62 @@ const App: React.FC = () => {
 
         <div className="flex-1 overflow-y-auto p-10">
           {activeTab === ModuleType.DASHBOARD && (
-            <div className="grid grid-cols-4 gap-6 animate-in fade-in duration-500">
-              <DashboardCard label="Personal Activo" value={activeEmployees.length} sub="Fichas" icon={Users} color="border-l-indigo-500 text-indigo-600" />
-              <DashboardCard label="Total Pago" value={`$${payrollResults.reduce((a,b)=>a+b.netSalary, 0).toLocaleString()}`} sub="Líquido" icon={CreditCard} color="border-l-emerald-500 text-emerald-600" />
-              <DashboardCard label="Bajas del Mes" value={finiquitos.length} sub="Finiquitos" icon={UserMinus} color="border-l-rose-500 text-rose-600" />
-              <DashboardCard label="Saldo Vacac." value={employees.reduce((a,b)=>a+(b.vacationDaysRemaining || 0), 0).toFixed(1)} sub="Días" icon={Umbrella} color="border-l-amber-500 text-amber-600" />
+            <div className="space-y-8">
+              <div className="grid grid-cols-4 gap-6 animate-in fade-in duration-500">
+                <DashboardCard label="Personal Activo" value={activeEmployees.length} sub="Fichas" icon={Users} color="border-l-indigo-500 text-indigo-600" />
+                <DashboardCard label="Total Pago" value={`$${payrollResults.reduce((a,b)=>a+b.netSalary, 0).toLocaleString()}`} sub="Líquido" icon={CreditCard} color="border-l-emerald-500 text-emerald-600" />
+                <DashboardCard label="Bajas del Mes" value={finiquitos.length} sub="Finiquitos" icon={UserMinus} color="border-l-rose-500 text-rose-600" />
+                <DashboardCard label="Saldo Vacac." value={employees.reduce((a,b)=>a+(b.vacationDaysRemaining || 0), 0).toFixed(1)} sub="Días" icon={Umbrella} color="border-l-amber-500 text-amber-600" />
+              </div>
+              
+              <Dashboard results={payrollResults} employees={employees} />
+            </div>
+          )}
+
+          {activeTab === ModuleType.CONTABILIDAD && (
+            <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
+              <div className="flex justify-between items-end">
+                <div>
+                  <h2 className="text-3xl font-black uppercase italic tracking-tighter">Integración Contable</h2>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Sincronización con Contabilidad25</p>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-1">
+                  <AccountingExport 
+                    results={payrollResults} 
+                    params={params} 
+                    company={selectedCompany} 
+                  />
+                </div>
+                
+                <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
+                  <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <Activity className="w-5 h-5 text-indigo-500" /> 
+                    Estado de Integración
+                  </h3>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between p-4 bg-emerald-50 rounded-xl border border-emerald-100">
+                      <div className="flex items-center gap-3">
+                        <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                        <span className="text-sm font-bold text-emerald-700 uppercase">Listo para exportar</span>
+                      </div>
+                      <span className="text-[10px] font-black text-emerald-600 uppercase">Conexión Local OK</span>
+                    </div>
+                    
+                    <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                      <h4 className="text-xs font-black text-slate-400 uppercase mb-4">Instrucciones de Importación</h4>
+                      <ol className="text-xs text-slate-600 space-y-3 list-decimal ml-4">
+                        <li>Asegúrese de haber ejecutado el "Cálculo Masivo" del mes.</li>
+                        <li>Haga clic en "Exportar a Contabilidad25" para descargar el archivo JSON.</li>
+                        <li>En la aplicación de Contabilidad, vaya a la sección de <b>Comprobantes</b>.</li>
+                        <li>Seleccione la opción de <b>Importar Centralización</b> y cargue el archivo descargado.</li>
+                      </ol>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 

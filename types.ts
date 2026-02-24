@@ -6,7 +6,8 @@ export enum ModuleType {
   RRHH = 'RRHH',
   FINIQUITOS = 'FINIQUITOS',
   PROCESOS = 'PROCESOS',
-  DASHBOARD = 'DASHBOARD'
+  DASHBOARD = 'DASHBOARD',
+  CONTABILIDAD = 'CONTABILIDAD'
 }
 
 export interface WorkerVacation {
