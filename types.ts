@@ -73,6 +73,9 @@ export interface Employee {
   isActive: boolean;
   vacationDaysRemaining: number;
   syncStatus: 'SYNCED' | 'PENDING';
+  absenteeismDays?: number;
+  medicalLeaveDays?: number;
+  unpaidLeaveDays?: number;
   supervisorId?: string;
   bankData?: any;
   terminationDate?: string;
@@ -96,6 +99,9 @@ export interface PayrollResult {
   costCenterId: string;
   bonuses: number;
   discounts: number;
+  absenteeismDays: number;
+  medicalLeaveDays: number;
+  unpaidLeaveDays: number;
 }
 
 export interface MonthlyParameters {

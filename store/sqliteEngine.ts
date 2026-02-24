@@ -37,7 +37,8 @@ const createTables = () => {
       id TEXT PRIMARY KEY, companyId TEXT, rut TEXT, firstName TEXT, lastName TEXT, email TEXT, 
       baseSalary REAL, position TEXT, costCenterId TEXT, supervisorId TEXT, startDate TEXT, 
       contractType TEXT, afpName TEXT, healthName TEXT, isActive INTEGER, bankData TEXT,
-      terminationDate TEXT, terminationCause TEXT, vacationDaysRemaining REAL
+      terminationDate TEXT, terminationCause TEXT, vacationDaysRemaining REAL,
+      absenteeismDays REAL, medicalLeaveDays REAL, unpaidLeaveDays REAL
     );
     CREATE TABLE IF NOT EXISTS vacations (
       id TEXT PRIMARY KEY, workerId TEXT, startDate TEXT, endDate TEXT, daysTaken REAL, status TEXT
@@ -53,7 +54,8 @@ const createTables = () => {
     CREATE TABLE IF NOT EXISTS payroll_results (
       id TEXT PRIMARY KEY, employeeId TEXT, month INTEGER, year INTEGER, grossSalary REAL, 
       taxableSalary REAL, legalGratification REAL, afpAmount REAL, healthAmount REAL, 
-      taxAmount REAL, loanDeduction REAL, netSalary REAL, costCenterId TEXT, bonuses REAL, discounts REAL
+      taxAmount REAL, loanDeduction REAL, netSalary REAL, costCenterId TEXT, bonuses REAL, discounts REAL,
+      absenteeismDays REAL, medicalLeaveDays REAL, unpaidLeaveDays REAL
     );
   `);
   persistDb();
@@ -82,11 +84,12 @@ export const sqliteStore = {
   saveEmployee: (e: Employee) => {
     if (!db) return;
     const bankDataStr = e.bankData ? JSON.stringify(e.bankData) : null;
-    db.run("INSERT OR REPLACE INTO employees VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
+    db.run("INSERT OR REPLACE INTO employees VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
       e.id, e.companyId, e.rut, e.firstName, e.lastName, e.email || '', 
       e.baseSalary, e.position, e.costCenterId, e.supervisorId || '',
       e.startDate, e.contractType, e.afpName, e.healthName, e.isActive ? 1 : 0, bankDataStr,
-      e.terminationDate || null, e.terminationCause || null, e.vacationDaysRemaining || 15
+      e.terminationDate || null, e.terminationCause || null, e.vacationDaysRemaining || 15,
+      e.absenteeismDays || 0, e.medicalLeaveDays || 0, e.unpaidLeaveDays || 0
     ]);
     persistDb();
   },
@@ -102,7 +105,8 @@ export const sqliteStore = {
         baseSalary: v[6], position: v[7], costCenterId: v[8], supervisorId: v[9],
         startDate: v[10], contractType: v[11], afpName: v[12], healthName: v[13], 
         isActive: v[14] === 1, bankData: v[15] ? JSON.parse(v[15]) : undefined,
-        terminationDate: v[16], terminationCause: v[17], vacationDaysRemaining: v[18]
+        terminationDate: v[16], terminationCause: v[17], vacationDaysRemaining: v[18],
+        absenteeismDays: v[19] || 0, medicalLeaveDays: v[20] || 0, unpaidLeaveDays: v[21] || 0
       });
     }
     stmt.free();
@@ -151,9 +155,10 @@ export const sqliteStore = {
   },
   savePayrollResult: (r: PayrollResult) => {
     if (!db) return;
-    db.run("INSERT OR REPLACE INTO payroll_results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
+    db.run("INSERT OR REPLACE INTO payroll_results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
       r.id, r.employeeId, r.month, r.year, r.grossSalary, r.taxableSalary, r.legalGratification,
-      r.afpAmount, r.healthAmount, r.taxAmount, r.loanDeduction, r.netSalary, r.costCenterId, r.bonuses, r.discounts
+      r.afpAmount, r.healthAmount, r.taxAmount, r.loanDeduction, r.netSalary, r.costCenterId, r.bonuses, r.discounts,
+      r.absenteeismDays, r.medicalLeaveDays, r.unpaidLeaveDays
     ]);
     persistDb();
   },
@@ -167,7 +172,8 @@ export const sqliteStore = {
       results.push({ 
         id: v[0], employeeId: v[1], month: v[2], year: v[3], grossSalary: v[4], 
         taxableSalary: v[5], legalGratification: v[6], afpAmount: v[7], healthAmount: v[8], 
-        taxAmount: v[9], loanDeduction: v[10], netSalary: v[11], costCenterId: v[12], bonuses: v[13], discounts: v[14] 
+        taxAmount: v[9], loanDeduction: v[10], netSalary: v[11], costCenterId: v[12], bonuses: v[13], discounts: v[14],
+        absenteeismDays: v[15] || 0, medicalLeaveDays: v[16] || 0, unpaidLeaveDays: v[17] || 0
       });
     }
     stmt.free();

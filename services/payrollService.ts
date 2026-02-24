@@ -6,13 +6,23 @@ export const calculatePayroll = (
   params: MonthlyParameters
 ): PayrollResult => {
   const baseSalary = employee.baseSalary;
+  const absenteeismDays = employee.absenteeismDays || 0;
+  const medicalLeaveDays = employee.medicalLeaveDays || 0;
+  const unpaidLeaveDays = employee.unpaidLeaveDays || 0;
+  const totalDiscountDays = absenteeismDays + medicalLeaveDays + unpaidLeaveDays;
+  
+  // Cálculo de descuentos por días no trabajados
+  const dayValue = baseSalary / 30;
+  const absenteeismDiscount = Math.round(dayValue * totalDiscountDays);
+  
+  const adjustedBaseSalary = baseSalary - absenteeismDiscount;
   
   // Cálculo Gratificación Legal Art 47 (25% con tope de 4.75 IMM)
   const monthlyGratificationCap = (params.imm * 4.75) / 12;
-  const rawGratification = baseSalary * 0.25;
+  const rawGratification = adjustedBaseSalary * 0.25;
   const legalGratification = Math.min(rawGratification, monthlyGratificationCap);
 
-  const taxableSalary = baseSalary + legalGratification;
+  const taxableSalary = adjustedBaseSalary + legalGratification;
   const taxableCap = params.uf * 81.6; // Tope Imponible Chile
   const finalTaxable = Math.min(taxableSalary, taxableCap);
   
@@ -43,12 +53,14 @@ export const calculatePayroll = (
     taxAmount,
     netSalary,
     isClosed: false,
-    // Fix: Add required fields for the updated PayrollResult interface
     afpAmount,
     healthAmount,
     loanDeduction: 0,
     costCenterId: employee.costCenterId,
     bonuses: 0,
-    discounts: 0
+    discounts: absenteeismDiscount,
+    absenteeismDays,
+    medicalLeaveDays,
+    unpaidLeaveDays
   };
 };
