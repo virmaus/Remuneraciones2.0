@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { ModuleType, Employee, MonthlyParameters, PayrollResult, Company, FiniquitoRecord, WorkerVacation } from './types';
 import { sqliteStore, initSqlite } from './store/sqliteEngine';
-import { runPayrollV2 } from './services/payrollEngine';
+import { runPayroll } from './payroll-engine';
 import { Dashboard } from './components/Dashboard';
 import { AccountingExport } from './components/AccountingExport';
 import { validateRut, normalizeRut, cleanRut } from './utils/rutUtils';
@@ -137,12 +137,16 @@ const App: React.FC = () => {
     if (params.isClosed) return alert("El periodo está cerrado.");
     employees.forEach(emp => {
       if (emp.isActive) {
-        const res = runPayrollV2(emp, params);
-        sqliteStore.savePayrollResult(res);
+        try {
+          const res = runPayroll(emp, params);
+          sqliteStore.savePayrollResult(res);
+        } catch (error: any) {
+          console.error(`Error calculando para ${emp.firstName}:`, error.message);
+        }
       }
     });
     refreshData();
-    alert("Cálculo masivo finalizado con Aritmética Exacta (Big.js).");
+    alert("Cálculo masivo finalizado con Motor Centralizado (V4).");
   };
 
   const handleExportPrevired = () => {

@@ -1,13 +1,13 @@
 
 import { Employee, MonthlyParameters, PayrollResult } from '../types';
-import { runPayrollV2 } from './payrollEngine';
+import { runPayroll } from '../payroll-engine';
 
 /**
- * @deprecated Use runPayrollV2 from payrollEngine.ts for exact arithmetic and layered logic.
+ * @deprecated Use runPayroll from payroll-engine for exact arithmetic and validated logic.
  */
 export const calculatePayroll = (
   employee: Employee,
   params: MonthlyParameters
 ): PayrollResult => {
-  return runPayrollV2(employee, params);
+  return runPayroll(employee, params);
 };
