@@ -25,11 +25,10 @@ export const db = {
   },
 
   getPayrollResults: (companyId: string, month: number, year: number): PayrollResult[] => {
-    // Implementar lectura desde SQLite cuando la tabla payroll_records esté completa
-    return JSON.parse(localStorage.getItem(`remun_pro_payrolls_${companyId}_${year}_${month}`) || '[]');
+    return sqliteStore.getPayrollResults(month, year);
   },
 
   savePayrollResults: (companyId: string, month: number, year: number, results: PayrollResult[]) => {
-    localStorage.setItem(`remun_pro_payrolls_${companyId}_${year}_${month}`, JSON.stringify(results));
+    results.forEach(res => sqliteStore.savePayrollResult(res));
   }
 };

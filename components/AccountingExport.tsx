@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { FileJson, Download, CheckCircle2, AlertCircle } from 'lucide-react';
 import { PayrollResult, MonthlyParameters, Company } from '../types';
+import { generateUUID } from '../utils/uuid';
 
 interface AccountingExportProps {
   results: PayrollResult[];
@@ -23,7 +24,7 @@ export const AccountingExport: React.FC<AccountingExportProps> = ({ results, par
 
     // Formato compatible con Contabilidad25
     const voucher = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       companyId: company.id,
       numero: params.lastFolio || 1,
       fecha: new Date(params.year, params.month, 0).toISOString().split('T')[0],

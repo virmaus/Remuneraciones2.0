@@ -16,6 +16,7 @@ import { AccountingExport } from './components/AccountingExport';
 import { validateRut, normalizeRut, cleanRut } from './utils/rutUtils';
 import { PreviredExporter } from './export/previred';
 import { generatePayslipHTML, printPayslip } from './utils/payslipGenerator';
+import { generateUUID } from './utils/uuid';
 
 const TERMINATION_CAUSES = [
   "Art. 159 N°1 - Mutuo acuerdo de las partes",
@@ -83,7 +84,7 @@ const App: React.FC = () => {
       setCompanies(comps);
       
       if (comps.length === 0) {
-        const demo = { id: crypto.randomUUID(), rut: '76.123.456-K', name: 'Empresa Local S.A.', address: 'Localhost 127', activityCode: '620100' };
+        const demo = { id: generateUUID(), rut: '76.123.456-K', name: 'Empresa Local S.A.', address: 'Localhost 127', activityCode: '620100' };
         sqliteStore.saveCompany(demo);
         setCompanies([demo]);
         setSelectedCompany(demo);
@@ -168,7 +169,7 @@ const App: React.FC = () => {
     e.preventDefault();
     if (!vacationForm.workerId || !vacationForm.daysTaken) return alert("Faltan datos.");
     const vac: WorkerVacation = {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         workerId: vacationForm.workerId || '',
         startDate: vacationForm.startDate || '',
         endDate: vacationForm.endDate || '',
@@ -187,7 +188,7 @@ const App: React.FC = () => {
                   (finiquitoForm.vacationIndemnity || 0) + 
                   (finiquitoForm.noticeIndemnity || 0);
     const record: FiniquitoRecord = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       employeeId: finiquitoForm.employeeId,
       terminationDate: finiquitoForm.terminationDate || '',
       cause: finiquitoForm.cause || '',
@@ -482,7 +483,7 @@ const App: React.FC = () => {
       </main>
 
       {/* Modals con estilos consistentes */}
-      {showCompanyModal && <CompanyModal onClose={() => setShowCompanyModal(false)} companies={companies} selectedCompany={selectedCompany} onSelect={(c:any) => { setSelectedCompany(c); setShowCompanyModal(false); refreshData(); }} onSave={(e:any) => { e.preventDefault(); const comp: Company = {...newCompany as Company, id: crypto.randomUUID()}; sqliteStore.saveCompany(comp); setCompanies([...companies, comp]); setSelectedCompany(comp); setShowCompanyModal(false); }} newCompany={newCompany} setNewCompany={setNewCompany} />}
+      {showCompanyModal && <CompanyModal onClose={() => setShowCompanyModal(false)} companies={companies} selectedCompany={selectedCompany} onSelect={(c:any) => { setSelectedCompany(c); setShowCompanyModal(false); refreshData(); }} onSave={(e:any) => { e.preventDefault(); const comp: Company = {...newCompany as Company, id: generateUUID()}; sqliteStore.saveCompany(comp); setCompanies([...companies, comp]); setSelectedCompany(comp); setShowCompanyModal(false); }} newCompany={newCompany} setNewCompany={setNewCompany} />}
       {showPeriodModal && <PeriodModal onClose={() => setShowPeriodModal(false)} params={params} onUpdate={(m:any, y:any) => { loadPeriodData(m, y); setShowPeriodModal(false); }} />}
       {showAddModal && <AddEmployeeModal onClose={() => setShowAddModal(false)} newEmp={newEmp} setNewEmp={setNewEmp} onSave={(e:any) => { 
         e.preventDefault(); 
@@ -491,7 +492,7 @@ const App: React.FC = () => {
         }
         const emp: Employee = {
           ...newEmp as Employee, 
-          id: crypto.randomUUID(), 
+          id: generateUUID(), 
           companyId: selectedCompany!.id, 
           rut: normalizeRut(newEmp.rut),
           startDate: new Date().toISOString().split('T')[0], 

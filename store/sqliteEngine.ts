@@ -161,17 +161,41 @@ export const sqliteStore = {
   },
   savePayrollResult: (r: PayrollResult) => {
     if (!db) return;
-    const auditStr = r.audit ? JSON.stringify(r.audit) : null;
+    
+    // Buscar la versión más alta existente para este empleado y periodo
+    const stmt = db.prepare("SELECT MAX(version) FROM payroll_results WHERE employeeId = ? AND month = ? AND year = ?");
+    stmt.bind([r.employeeId, r.month, r.year]);
+    let nextVersion = 1;
+    if (stmt.step()) {
+      const maxV = stmt.get()[0];
+      if (maxV !== null) {
+        nextVersion = maxV + 1;
+      }
+    }
+    stmt.free();
+
+    const auditStr = r.audit ? JSON.stringify({ ...r.audit, version: nextVersion }) : JSON.stringify({ version: nextVersion });
+    
     db.run("INSERT OR REPLACE INTO payroll_results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
       r.id, r.employeeId, r.month, r.year, r.grossSalary, r.taxableSalary, r.legalGratification,
       r.afpAmount, r.healthAmount, r.taxAmount, r.loanDeduction, r.netSalary, r.costCenterId, r.bonuses, r.discounts,
-      r.absenteeismDays, r.medicalLeaveDays, r.unpaidLeaveDays, r.version || 1, auditStr
+      r.absenteeismDays, r.medicalLeaveDays, r.unpaidLeaveDays, nextVersion, auditStr
     ]);
     persistDb();
   },
   getPayrollResults: (month: number, year: number): PayrollResult[] => {
     if (!db) return [];
-    const stmt = db.prepare("SELECT * FROM payroll_results WHERE month = ? AND year = ?");
+    // Seleccionar solo la versión más alta para cada empleado en el periodo dado
+    const stmt = db.prepare(`
+      SELECT * FROM payroll_results 
+      WHERE month = ? AND year = ? 
+      AND version = (
+        SELECT MAX(version) FROM payroll_results AS pr2 
+        WHERE pr2.employeeId = payroll_results.employeeId 
+        AND pr2.month = payroll_results.month 
+        AND pr2.year = payroll_results.year
+      )
+    `);
     stmt.bind([month, year]);
     const results = [];
     while (stmt.step()) {

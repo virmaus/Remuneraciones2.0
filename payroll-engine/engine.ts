@@ -1,6 +1,7 @@
 
 import { Decimal } from 'decimal.js';
 import { Employee, MonthlyParameters, PayrollResult } from '../types';
+import { generateUUID } from '../utils/uuid';
 
 // Configurar precisión global para cálculos financieros
 Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP });
@@ -80,7 +81,7 @@ export const calculatePayrollInternal = (employee: Employee, params: MonthlyPara
 
   // 6. Construcción del Resultado Inmutable
   const result: PayrollResult = {
-    id: crypto.randomUUID(),
+    id: generateUUID(),
     employeeId: employee.id,
     month: params.month,
     year: params.year,
