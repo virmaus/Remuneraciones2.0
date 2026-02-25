@@ -7,7 +7,7 @@ import {
   CheckCircle2, Save, TrendingUp, Download,
   UserMinus, Receipt, Landmark, Umbrella, ChevronDown, Building2,
   FileSpreadsheet, FileCheck, CreditCard, Github, ShieldCheck, ShieldAlert,
-  Lock, Unlock, UserPlus, Fingerprint
+  Lock, Unlock, UserPlus, Fingerprint, Pencil
 } from 'lucide-react';
 import { ModuleType, Employee, MonthlyParameters, PayrollResult, Company, FiniquitoRecord, WorkerVacation } from './types';
 import { sqliteStore, initSqlite } from './store/sqliteEngine';
@@ -43,6 +43,7 @@ const App: React.FC = () => {
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const [dbReady, setDbReady] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
 
   // Modal States
   const [showAddModal, setShowAddModal] = useState(false);
@@ -54,6 +55,7 @@ const App: React.FC = () => {
   const [roles, setRoles] = useState<any[]>([]);
   const [movements, setMovements] = useState<any[]>([]);
   const [networkInfo, setNetworkInfo] = useState<{ips: string[], port: number} | null>(null);
+  const [currentUser, setCurrentUser] = useState<any>({ id: 'admin-01', username: 'admin', fullName: 'Administrador Central', roleId: 'admin' });
 
   const [movementForm, setMovementForm] = useState<any>({
     employeeId: '', type: 'HABER_IMPONIBLE', description: '', amount: 0, unit: 'PESOS', date: new Date().toISOString().split('T')[0]
@@ -257,16 +259,31 @@ const App: React.FC = () => {
 
   const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Simplified user save
     const user = {
       id: generateUUID(),
       username: 'nuevo_usuario',
       fullName: 'Usuario Nuevo',
-      roleId: 'admin',
-      isActive: true
+      roleId: 'operador',
+      isActive: true,
+      createdBy: currentUser.username
     };
     await sqliteStore.saveUser(user);
     await refreshData();
+  };
+
+  const handleDeleteUser = async (id: string) => {
+    if (currentUser.roleId !== 'admin') return alert("Solo el administrador puede eliminar usuarios.");
+    if (confirm("¿Está seguro de eliminar este usuario?")) {
+      await sqliteStore.deleteUser(id, currentUser.roleId);
+      await refreshData();
+    }
+  };
+
+  const handleEditEmployee = (emp: Employee) => {
+    if (params.isClosed) return alert("No se puede editar fichas con el periodo cerrado.");
+    setEditingEmployee(emp);
+    setNewEmp(emp);
+    setShowAddModal(true);
   };
 
   const toggleClosure = async () => {
@@ -322,6 +339,31 @@ const App: React.FC = () => {
               </div>
             </div>
           )}
+
+          <div className="mt-6 pt-6 border-t border-white/5">
+            <div className="text-[9px] font-black text-slate-500 uppercase mb-3 tracking-widest">Sesión Actual</div>
+            <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-white/10">
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${currentUser.roleId === 'admin' ? 'bg-rose-500/20 text-rose-400' : 'bg-indigo-500/20 text-indigo-400'}`}>
+                <Fingerprint className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] font-black text-white truncate uppercase tracking-tighter">{currentUser.fullName}</div>
+                <div className="text-[9px] font-bold text-slate-500 uppercase">{currentUser.roleId}</div>
+              </div>
+            </div>
+            <select 
+              className="mt-2 w-full bg-slate-800 border-none rounded-lg text-[9px] font-black uppercase text-slate-400 py-2 px-3 focus:ring-0 cursor-pointer"
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === 'admin') setCurrentUser({ id: 'admin-01', username: 'admin', fullName: 'Administrador Central', roleId: 'admin' });
+                else setCurrentUser({ id: 'op-01', username: 'operador', fullName: 'Operador de Turno', roleId: 'operador' });
+              }}
+              value={currentUser.roleId}
+            >
+              <option value="admin">Cambiar a Admin</option>
+              <option value="operador">Cambiar a Operador</option>
+            </select>
+          </div>
         </div>
       </aside>
 
@@ -457,8 +499,8 @@ const App: React.FC = () => {
 
           {activeTab === ModuleType.ARCHIVO && (
             <div className="space-y-6">
-              <div className="flex justify-between items-end"><h2 className="text-3xl font-black uppercase italic tracking-tighter">Fichas Maestro</h2><button onClick={() => setShowAddModal(true)} className="px-8 py-4 bg-indigo-600 text-white rounded-2xl text-xs font-black uppercase shadow-xl flex items-center gap-3 transition-all hover:scale-105 active:scale-95"><Plus className="w-5 h-5" /> Agregar Colaborador</button></div>
-              <EmployeeTable employees={employees} />
+              <div className="flex justify-between items-end"><h2 className="text-3xl font-black uppercase italic tracking-tighter">Fichas Maestro</h2><button onClick={() => { setEditingEmployee(null); setNewEmp({ rut: '', firstName: '', lastName: '', baseSalary: 500000, position: '', costCenterId: 'ADM-01', afpName: 'HABITAT', afpCode: '01', healthName: 'FONASA', healthCode: '01', contractType: 'INDEFINIDO', jornada: 45, vacationDaysRemaining: 15 }); setShowAddModal(true); }} className="px-8 py-4 bg-indigo-600 text-white rounded-2xl text-xs font-black uppercase shadow-xl flex items-center gap-3 transition-all hover:scale-105 active:scale-95"><Plus className="w-5 h-5" /> Agregar Colaborador</button></div>
+              <EmployeeTable employees={employees} onEdit={handleEditEmployee} isClosed={params.isClosed} />
             </div>
           )}
 
@@ -495,16 +537,45 @@ const App: React.FC = () => {
                   <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
                     <table className="w-full text-left text-xs">
                       <thead className="bg-slate-50 text-slate-500 font-black uppercase border-b">
-                        <tr><th className="px-8 py-6">Usuario</th><th className="px-8 py-6">Perfil</th><th className="px-8 py-6 text-center">Estado</th></tr>
+                        <tr>
+                          <th className="px-8 py-6">Usuario</th>
+                          <th className="px-8 py-6">Perfil</th>
+                          <th className="px-8 py-6">Creado por</th>
+                          <th className="px-8 py-6 text-center">Acciones</th>
+                        </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {users.length === 0 ? (
-                          <tr><td colSpan={3} className="px-8 py-10 text-center text-slate-400 italic">No hay usuarios adicionales creados localmente</td></tr>
+                          <tr><td colSpan={4} className="px-8 py-10 text-center text-slate-400 italic">No hay usuarios adicionales creados localmente</td></tr>
                         ) : users.map(u => (
-                          <tr key={u.id}>
-                            <td className="px-8 py-6 font-black uppercase italic tracking-tighter">{u.fullName} <span className="text-slate-400 font-normal">(@{u.username})</span></td>
-                            <td className="px-8 py-6 font-bold text-indigo-600 uppercase">{u.roleId}</td>
-                            <td className="px-8 py-6 text-center"><span className={`px-2 py-1 rounded-full text-[9px] font-black uppercase ${u.isActive ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>{u.isActive ? 'Activo' : 'Inactivo'}</span></td>
+                          <tr key={u.id} className="hover:bg-slate-50 transition-all">
+                            <td className="px-8 py-6">
+                              <div className="font-black uppercase italic tracking-tighter text-slate-800">{u.fullName}</div>
+                              <div className="text-[10px] font-bold text-slate-400">@{u.username}</div>
+                            </td>
+                            <td className="px-8 py-6">
+                              <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase ${u.roleId === 'admin' ? 'bg-rose-50 text-rose-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                                {u.roleId}
+                              </span>
+                            </td>
+                            <td className="px-8 py-6 text-slate-400 font-bold uppercase text-[10px]">
+                              {u.createdBy || 'Sistema'}
+                            </td>
+                            <td className="px-8 py-6 text-center">
+                              <div className="flex items-center justify-center gap-2">
+                                <button className="p-2 bg-slate-100 text-slate-400 rounded-lg hover:bg-indigo-600 hover:text-white transition-all">
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                                {currentUser.roleId === 'admin' && (
+                                  <button 
+                                    onClick={() => handleDeleteUser(u.id)}
+                                    className="p-2 bg-slate-100 text-slate-400 rounded-lg hover:bg-rose-600 hover:text-white transition-all"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -513,14 +584,25 @@ const App: React.FC = () => {
                 </div>
                 
                 <div className="space-y-6">
-                  <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Auditoría de Acceso</h3>
-                  <div className="bg-[#0F172A] p-8 rounded-[2.5rem] text-white space-y-4 shadow-2xl">
+                  <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Trazabilidad de Cambios</h3>
+                  <div className="bg-[#0F172A] p-8 rounded-[2.5rem] text-white space-y-6 shadow-2xl">
                     <div className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl border border-white/10">
-                      <Fingerprint className="w-8 h-8 text-indigo-400" />
-                      <div><div className="text-[10px] font-black uppercase text-slate-400">Último Acceso</div><div className="text-xs font-bold">Hoy, 08:45 AM</div></div>
+                      <ShieldCheck className="w-8 h-8 text-emerald-400" />
+                      <div>
+                        <div className="text-[10px] font-black uppercase text-slate-400">Auditoría Activa</div>
+                        <div className="text-xs font-bold">Registro de Operaciones</div>
+                      </div>
                     </div>
-                    <div className="p-4 text-[10px] text-slate-400 leading-relaxed italic">
-                      "La trazabilidad de los datos sensibles se mantiene localmente en el motor SQLite cifrado por el navegador."
+                    <div className="space-y-4">
+                      <div className="p-4 bg-white/5 rounded-2xl border border-white/10 space-y-2">
+                        <div className="text-[9px] font-black text-indigo-400 uppercase">Última Acción</div>
+                        <div className="text-[10px] font-medium text-slate-300">
+                          El usuario <span className="text-white font-bold">@{currentUser.username}</span> está operando el sistema.
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-slate-400 leading-relaxed italic px-2">
+                        "Cada modificación en las fichas de colaboradores y parámetros mensuales queda vinculada a la cuenta activa para cumplir con normativas de la Dirección del Trabajo."
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -540,31 +622,34 @@ const App: React.FC = () => {
       {/* Modals con estilos consistentes */}
       {showCompanyModal && <CompanyModal onClose={() => setShowCompanyModal(false)} companies={companies} selectedCompany={selectedCompany} onSelect={(c:any) => { setSelectedCompany(c); setShowCompanyModal(false); refreshData(); }} onSave={async (e:any) => { e.preventDefault(); const comp: Company = {...newCompany as Company, id: generateUUID()}; await sqliteStore.saveCompany(comp); setCompanies([...companies, comp]); setSelectedCompany(comp); setShowCompanyModal(false); }} newCompany={newCompany} setNewCompany={setNewCompany} />}
       {showPeriodModal && <PeriodModal onClose={() => setShowPeriodModal(false)} params={params} onUpdate={async (m:any, y:any) => { await loadPeriodData(m, y); setShowPeriodModal(false); }} />}
-      {showAddModal && <AddEmployeeModal onClose={() => setShowAddModal(false)} newEmp={newEmp} setNewEmp={setNewEmp} onSave={async (e:any) => { 
+      {showAddModal && <AddEmployeeModal onClose={() => { setShowAddModal(false); setEditingEmployee(null); }} newEmp={newEmp} setNewEmp={setNewEmp} isEditing={!!editingEmployee} onSave={async (e:any) => { 
         e.preventDefault(); 
         if (!newEmp.rut || !validateRut(newEmp.rut)) {
           return alert("RUT inválido. Por favor verifique.");
         }
         const emp: Employee = {
           ...newEmp as Employee, 
-          id: generateUUID(), 
+          id: editingEmployee ? editingEmployee.id : generateUUID(), 
           companyId: selectedCompany!.id, 
           rut: normalizeRut(newEmp.rut),
-          startDate: new Date().toISOString().split('T')[0], 
-          isActive: true, 
-          vacationDaysRemaining: 15, 
+          startDate: editingEmployee ? editingEmployee.startDate : new Date().toISOString().split('T')[0], 
+          isActive: editingEmployee ? editingEmployee.isActive : true, 
+          vacationDaysRemaining: editingEmployee ? editingEmployee.vacationDaysRemaining : 15, 
           syncStatus: 'PENDING',
           jornada: newEmp.jornada || 45,
           afpCode: newEmp.afpCode || '01',
-          healthCode: newEmp.healthCode || '01'
+          healthCode: newEmp.healthCode || '01',
+          createdBy: editingEmployee ? editingEmployee.createdBy : currentUser.username,
+          updatedBy: currentUser.username
         }; 
         await sqliteStore.saveEmployee(emp); 
         setShowAddModal(false); 
+        setEditingEmployee(null);
         await refreshData(); 
       }} />}
       {showVacationModal && <VacationModal onClose={() => setShowVacationModal(false)} activeEmployees={activeEmployees} vacationForm={vacationForm} setVacationForm={setVacationForm} onSave={handleSaveVacation} />}
       {showFiniquitoModal && <FiniquitoModal onClose={() => setShowFiniquitoModal(false)} activeEmployees={activeEmployees} finiquitoForm={finiquitoForm} setFiniquitoForm={setFiniquitoForm} onSave={handleSaveFiniquito} />}
-      {showMovementModal && <MovementModal onClose={() => setShowMovementModal(false)} employees={employees} movementForm={movementForm} setMovementForm={setMovementForm} onSave={handleSaveMovement} />}
+      {showMovementModal && <MovementModal onClose={() => setShowMovementModal(false)} employees={activeEmployees} movementForm={movementForm} setMovementForm={setMovementForm} onSave={handleSaveMovement} />}
     </div>
   );
 };
@@ -586,19 +671,30 @@ const VacationTable = ({ vacations, employees }: { vacations: WorkerVacation[], 
   </div>
 );
 
-const EmployeeTable = ({ employees }: { employees: Employee[] }) => (
+const EmployeeTable = ({ employees, onEdit, isClosed }: { employees: Employee[], onEdit: (e: Employee) => void, isClosed: boolean }) => (
   <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
     <table className="w-full text-left text-xs">
       <thead className="bg-slate-50 text-slate-500 font-black uppercase border-b">
-        <tr><th className="px-10 py-6">RUT</th><th className="px-10 py-6">Ficha Personal</th><th className="px-10 py-6 text-right">Saldo Vac.</th><th className="px-10 py-6 text-center">Estado</th></tr>
+        <tr><th className="px-10 py-6">RUT</th><th className="px-10 py-6">Ficha Personal</th><th className="px-10 py-6 text-right">Saldo Vac.</th><th className="px-10 py-6 text-center">Estado</th><th className="px-10 py-6 text-center">Acciones</th></tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
         {employees.map(e => (
-          <tr key={e.id} className="hover:bg-slate-50/80 cursor-pointer group transition-all">
+          <tr key={e.id} className="hover:bg-slate-50/80 group transition-all">
             <td className="px-10 py-6 font-bold text-slate-400 group-hover:text-indigo-600">{e.rut}</td>
             <td className="px-10 py-6 font-black uppercase italic tracking-tighter">{e.firstName} {e.lastName}</td>
             <td className="px-10 py-6 text-right font-black text-amber-600">{(e.vacationDaysRemaining || 0).toFixed(1)} d</td>
             <td className="px-10 py-6 text-center"><span className={`inline-block w-2.5 h-2.5 rounded-full ${e.isActive ? 'bg-emerald-500 shadow-emerald-500/30' : 'bg-rose-500'}`}></span></td>
+            <td className="px-10 py-6 text-center">
+              {!isClosed && (
+                <button 
+                  onClick={() => onEdit(e)}
+                  className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-600 hover:text-white transition-all"
+                  title="Editar Ficha"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+              )}
+            </td>
           </tr>
         ))}
       </tbody>
@@ -793,8 +889,8 @@ const MovementModal = ({ onClose, employees, movementForm, setMovementForm, onSa
             onChange={e => setMovementForm({...movementForm, employeeId: e.target.value})}
             className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl font-bold text-slate-800 text-sm shadow-inner"
           >
-            <option value="">Seleccione...</option>
-            {employees.map((emp: any) => <option key={emp.id} value={emp.id}>{emp.firstName} {emp.lastName}</option>)}
+            <option value="">{employees.length === 0 ? 'No hay colaboradores activos' : 'Seleccione...'}</option>
+            {employees.map((emp: any) => <option key={emp.id} value={emp.id}>{emp.firstName} {emp.lastName} ({emp.rut})</option>)}
           </select>
         </div>
         <div className="grid grid-cols-2 gap-6">
@@ -821,11 +917,11 @@ const MovementModal = ({ onClose, employees, movementForm, setMovementForm, onSa
   </div>
 );
 
-const AddEmployeeModal = ({ onClose, newEmp, setNewEmp, onSave }: any) => (
+const AddEmployeeModal = ({ onClose, newEmp, setNewEmp, onSave, isEditing }: any) => (
   <div className="fixed inset-0 z-50 flex items-center justify-center p-8 bg-slate-950/80 backdrop-blur-md">
     <div className="bg-white w-full max-w-3xl rounded-[3rem] p-12 relative shadow-2xl max-h-[90vh] overflow-y-auto">
       <button onClick={onClose} className="absolute top-8 right-8 p-3 hover:bg-slate-100 rounded-full"><X className="w-8 h-8 text-slate-400" /></button>
-      <h2 className="text-3xl font-black uppercase italic mb-10 tracking-tighter">Contratación Local</h2>
+      <h2 className="text-3xl font-black uppercase italic mb-10 tracking-tighter">{isEditing ? 'Editar Ficha Maestro' : 'Contratación Local'}</h2>
       <form onSubmit={onSave} className="space-y-6">
         <div className="grid grid-cols-2 gap-6">
           <FormGroup label="RUT" value={newEmp.rut} onChange={(v:any)=>setNewEmp({...newEmp, rut: v})} placeholder="12.xxx.xxx-x" />
@@ -844,7 +940,30 @@ const AddEmployeeModal = ({ onClose, newEmp, setNewEmp, onSave }: any) => (
           <FormGroup label="Salud" value={newEmp.healthName} onChange={(v:any)=>setNewEmp({...newEmp, healthName: v})} />
           <FormGroup label="Cod. Salud" value={newEmp.healthCode} onChange={(v:any)=>setNewEmp({...newEmp, healthCode: v})} />
         </div>
-        <button type="submit" className="w-full py-6 bg-indigo-600 text-white rounded-[2rem] font-black uppercase text-xs tracking-widest hover:bg-indigo-700 transition-all mt-6 shadow-xl shadow-indigo-600/20 italic">Registrar Nueva Ficha</button>
+        
+        <div className="p-6 bg-slate-50 rounded-3xl border border-slate-200 space-y-4">
+          <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 text-amber-500" /> Parámetros Previred / DT
+          </h3>
+          <div className="grid grid-cols-2 gap-6">
+            <div className="flex items-center gap-3 px-4 py-3 bg-white rounded-xl border border-slate-200">
+              <input 
+                type="checkbox" 
+                checked={newEmp.afcStatus} 
+                onChange={e => setNewEmp({...newEmp, afcStatus: e.target.checked})}
+                className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+              />
+              <label className="text-[10px] font-black text-slate-600 uppercase">Seguro Cesantía (AFC)</label>
+            </div>
+            <FormGroup label="Trabajo Pesado (%)" type="number" value={newEmp.heavyWork} onChange={(v:any)=>setNewEmp({...newEmp, heavyWork: Number(v)})} />
+          </div>
+          <div className="grid grid-cols-2 gap-6">
+            <FormGroup label="Monto APV ($)" type="number" value={newEmp.apvAmount} onChange={(v:any)=>setNewEmp({...newEmp, apvAmount: Number(v)})} />
+            <FormGroup label="Institución APV" value={newEmp.apvInstitution} onChange={(v:any)=>setNewEmp({...newEmp, apvInstitution: v})} />
+          </div>
+        </div>
+
+        <button type="submit" className="w-full py-6 bg-indigo-600 text-white rounded-[2rem] font-black uppercase text-xs tracking-widest hover:bg-indigo-700 transition-all mt-6 shadow-xl shadow-indigo-600/20 italic">{isEditing ? 'Guardar Cambios' : 'Registrar Nueva Ficha'}</button>
       </form>
     </div>
   </div>

@@ -81,6 +81,12 @@ export interface Employee {
   absenteeismDays?: number;
   medicalLeaveDays?: number;
   unpaidLeaveDays?: number;
+  afcStatus?: boolean;
+  heavyWork?: number;
+  apvAmount?: number;
+  apvInstitution?: string;
+  createdBy?: string;
+  updatedBy?: string;
   supervisorId?: string;
   bankData?: {
     bankName: string;
@@ -167,6 +173,7 @@ export interface User {
   roleId: string;
   isActive: boolean;
   lastLogin?: string;
+  createdBy?: string;
 }
 
 export interface UserRole {

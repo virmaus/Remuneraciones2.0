@@ -20,7 +20,9 @@ db.exec(`
     baseSalary REAL, position TEXT, costCenterId TEXT, startDate TEXT, contractType TEXT, 
     contractSubtype TEXT, jornada INTEGER, afpName TEXT, afpCode TEXT, healthName TEXT, 
     healthCode TEXT, isActive INTEGER, vacationDaysRemaining REAL, syncStatus TEXT,
-    absenteeismDays INTEGER, medicalLeaveDays INTEGER, unpaidLeaveDays INTEGER
+    absenteeismDays INTEGER, medicalLeaveDays INTEGER, unpaidLeaveDays INTEGER,
+    afcStatus INTEGER DEFAULT 0, heavyWork REAL DEFAULT 0, apvAmount REAL DEFAULT 0, 
+    apvInstitution TEXT, createdBy TEXT, updatedBy TEXT
   );
   CREATE TABLE IF NOT EXISTS payroll_results (
     id TEXT PRIMARY KEY, employeeId TEXT, month INTEGER, year INTEGER, grossSalary REAL, 
@@ -34,7 +36,10 @@ db.exec(`
   );
   CREATE TABLE IF NOT EXISTS vacations (id TEXT PRIMARY KEY, workerId TEXT, startDate TEXT, endDate TEXT, daysTaken REAL, status TEXT);
   CREATE TABLE IF NOT EXISTS finiquitos (id TEXT PRIMARY KEY, employeeId TEXT, terminationDate TEXT, cause TEXT, totalAmount REAL, yearsOfServiceIndemnity REAL, vacationIndemnity REAL, noticeIndemnity REAL);
-  CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT, fullName TEXT, roleId TEXT, isActive INTEGER, lastLogin TEXT);
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY, username TEXT, fullName TEXT, roleId TEXT, isActive INTEGER, 
+    lastLogin TEXT, createdBy TEXT
+  );
   CREATE TABLE IF NOT EXISTS user_roles (id TEXT PRIMARY KEY, name TEXT, permissions TEXT);
   CREATE TABLE IF NOT EXISTS monthly_movements (
     id TEXT PRIMARY KEY, employeeId TEXT, companyId TEXT, month INTEGER, year INTEGER, 
@@ -67,13 +72,21 @@ async function startServer() {
   app.post('/api/employees', (req, res) => {
     const e = req.body;
     db.prepare(`
-      INSERT OR REPLACE INTO employees VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      INSERT OR REPLACE INTO employees (
+        id, companyId, rut, firstName, lastName, email, baseSalary, position, 
+        costCenterId, startDate, contractType, contractSubtype, jornada, 
+        afpName, afpCode, healthName, healthCode, isActive, vacationDaysRemaining, 
+        syncStatus, absenteeismDays, medicalLeaveDays, unpaidLeaveDays,
+        afcStatus, heavyWork, apvAmount, apvInstitution, createdBy, updatedBy
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(
       e.id, e.companyId, e.rut, e.firstName, e.lastName, e.email || null, 
       e.baseSalary, e.position, e.costCenterId, e.startDate, e.contractType, 
       e.contractSubtype || null, e.jornada, e.afpName, e.afpCode || null, 
       e.healthName, e.healthCode || null, e.isActive ? 1 : 0, e.vacationDaysRemaining, 
-      e.syncStatus, e.absenteeismDays || 0, e.medicalLeaveDays || 0, e.unpaidLeaveDays || 0
+      e.syncStatus, e.absenteeismDays || 0, e.medicalLeaveDays || 0, e.unpaidLeaveDays || 0,
+      e.afcStatus ? 1 : 0, e.heavyWork || 0, e.apvAmount || 0, e.apvInstitution || null,
+      e.createdBy || null, e.updatedBy || null
     );
     res.json({ success: true });
   });
@@ -155,7 +168,21 @@ async function startServer() {
 
   app.post('/api/users', (req, res) => {
     const u = req.body;
-    db.prepare('INSERT OR REPLACE INTO users VALUES (?,?,?,?,?,?)').run(u.id, u.username, u.fullName, u.roleId, u.isActive ? 1 : 0, u.lastLogin || null);
+    db.prepare('INSERT OR REPLACE INTO users VALUES (?,?,?,?,?,?,?)').run(
+      u.id, u.username, u.fullName, u.roleId, u.isActive ? 1 : 0, u.lastLogin || null, u.createdBy || null
+    );
+    res.json({ success: true });
+  });
+
+  app.delete('/api/users/:id', (req, res) => {
+    const { id } = req.params;
+    const { requesterRole } = req.query;
+
+    if (requesterRole !== 'admin') {
+      return res.status(403).json({ error: 'Solo el administrador puede eliminar usuarios.' });
+    }
+
+    db.prepare('DELETE FROM users WHERE id = ?').run(id);
     res.json({ success: true });
   });
 

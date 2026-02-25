@@ -86,6 +86,11 @@ export const sqliteStore = {
     const res = await fetch(`${API_BASE}/users`);
     return res.json();
   },
+  deleteUser: async (id: string, requesterRole: string) => {
+    await fetch(`${API_BASE}/users/${id}?requesterRole=${requesterRole}`, {
+      method: 'DELETE'
+    });
+  },
   saveRole: async (r: any) => {
     await fetch(`${API_BASE}/roles`, {
       method: 'POST',
