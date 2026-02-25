@@ -7,7 +7,8 @@ export enum ModuleType {
   FINIQUITOS = 'FINIQUITOS',
   PROCESOS = 'PROCESOS',
   DASHBOARD = 'DASHBOARD',
-  CONTABILIDAD = 'CONTABILIDAD'
+  CONTABILIDAD = 'CONTABILIDAD',
+  SEGURIDAD = 'SEGURIDAD'
 }
 
 export interface WorkerVacation {
@@ -157,4 +158,32 @@ export interface FiniquitoRecord {
   yearsOfServiceIndemnity: number;
   vacationIndemnity: number;
   noticeIndemnity: number;
+}
+
+export interface User {
+  id: string;
+  username: string;
+  fullName: string;
+  roleId: string;
+  isActive: boolean;
+  lastLogin?: string;
+}
+
+export interface UserRole {
+  id: string;
+  name: string;
+  permissions: string[]; // List of ModuleType or specific actions
+}
+
+export interface MonthlyMovement {
+  id: string;
+  employeeId: string;
+  companyId: string;
+  month: number;
+  year: number;
+  type: 'HABER_IMPONIBLE' | 'HABER_NO_IMPONIBLE' | 'DESCUENTO_LEGAL' | 'DESCUENTO_VOLUNTARIO' | 'LICENCIA' | 'INASISTENCIA';
+  description: string;
+  amount: number;
+  unit: 'PESOS' | 'DIAS' | 'HORAS' | 'UF' | 'PORCENTAJE';
+  date: string;
 }

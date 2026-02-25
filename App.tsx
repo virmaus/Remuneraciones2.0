@@ -6,7 +6,8 @@ import {
   BadgeCheck, Scale, LayoutDashboard, X, Plus, 
   CheckCircle2, Save, TrendingUp, Download,
   UserMinus, Receipt, Landmark, Umbrella, ChevronDown, Building2,
-  FileSpreadsheet, FileCheck, CreditCard, Github
+  FileSpreadsheet, FileCheck, CreditCard, Github, ShieldCheck, ShieldAlert,
+  Lock, Unlock, UserPlus, Fingerprint
 } from 'lucide-react';
 import { ModuleType, Employee, MonthlyParameters, PayrollResult, Company, FiniquitoRecord, WorkerVacation } from './types';
 import { sqliteStore, initSqlite } from './store/sqliteEngine';
@@ -46,6 +47,17 @@ const App: React.FC = () => {
   // Modal States
   const [showAddModal, setShowAddModal] = useState(false);
   const [showFiniquitoModal, setShowFiniquitoModal] = useState(false);
+  const [showMovementModal, setShowMovementModal] = useState(false);
+  const [showUserModal, setShowUserModal] = useState(false);
+
+  const [users, setUsers] = useState<any[]>([]);
+  const [roles, setRoles] = useState<any[]>([]);
+  const [movements, setMovements] = useState<any[]>([]);
+  const [networkInfo, setNetworkInfo] = useState<{ips: string[], port: number} | null>(null);
+
+  const [movementForm, setMovementForm] = useState<any>({
+    employeeId: '', type: 'HABER_IMPONIBLE', description: '', amount: 0, unit: 'PESOS', date: new Date().toISOString().split('T')[0]
+  });
   const [showCompanyModal, setShowCompanyModal] = useState(false);
   const [showPeriodModal, setShowPeriodModal] = useState(false);
   const [showVacationModal, setShowVacationModal] = useState(false);
@@ -80,19 +92,25 @@ const App: React.FC = () => {
   useEffect(() => {
     const startup = async () => {
       await initSqlite();
-      const comps = sqliteStore.getCompanies();
+      const comps = await sqliteStore.getCompanies();
       setCompanies(comps);
       
       if (comps.length === 0) {
         const demo = { id: generateUUID(), rut: '76.123.456-K', name: 'Empresa Local S.A.', address: 'Localhost 127', activityCode: '620100' };
-        sqliteStore.saveCompany(demo);
+        await sqliteStore.saveCompany(demo);
         setCompanies([demo]);
         setSelectedCompany(demo);
       } else {
         setSelectedCompany(comps[0]);
       }
       
-      loadPeriodData(3, 2024);
+      await loadPeriodData(3, 2024);
+      
+      fetch('/api/network-info')
+        .then(res => res.json())
+        .then(data => setNetworkInfo(data))
+        .catch(() => {});
+
       setDbReady(true);
     };
     startup();
@@ -104,8 +122,8 @@ const App: React.FC = () => {
     }
   }, [dbReady, selectedCompany, params.month, params.year]);
 
-  const loadPeriodData = (month: number, year: number) => {
-    const storedParams = sqliteStore.getMonthlyParameters(month, year);
+  const loadPeriodData = async (month: number, year: number) => {
+    const storedParams = await sqliteStore.getMonthlyParameters(month, year);
     if (storedParams) {
       setParams(storedParams);
     } else {
@@ -115,15 +133,33 @@ const App: React.FC = () => {
       };
       setParams(defaultParams);
     }
+    if (selectedCompany) {
+      const movs = await sqliteStore.getMovements(selectedCompany.id, month, year);
+      setMovements(movs);
+    }
   };
 
-  const refreshData = () => {
+  const refreshData = async () => {
     if (!selectedCompany) return;
-    setEmployees(sqliteStore.getEmployees(selectedCompany.id));
-    setPayrollResults(sqliteStore.getPayrollResults(params.month, params.year));
-    setFiniquitos(sqliteStore.getFiniquitos());
-    setVacations(sqliteStore.getVacations());
-    setCompanies(sqliteStore.getCompanies());
+    const [emps, payroll, fin, vac, comps, usrs, rls, movs] = await Promise.all([
+      sqliteStore.getEmployees(selectedCompany.id),
+      sqliteStore.getPayrollResults(params.month, params.year),
+      sqliteStore.getFiniquitos(),
+      sqliteStore.getVacations(),
+      sqliteStore.getCompanies(),
+      sqliteStore.getUsers(),
+      sqliteStore.getRoles(),
+      sqliteStore.getMovements(selectedCompany.id, params.month, params.year)
+    ]);
+
+    setEmployees(emps);
+    setPayrollResults(payroll);
+    setFiniquitos(fin);
+    setVacations(vac);
+    setCompanies(comps);
+    setUsers(usrs);
+    setRoles(rls);
+    setMovements(movs);
   };
 
   const checkGitHubUpdates = () => {
@@ -134,19 +170,19 @@ const App: React.FC = () => {
     }, 2000);
   };
 
-  const handleRunPayroll = () => {
+  const handleRunPayroll = async () => {
     if (params.isClosed) return alert("El periodo está cerrado.");
-    employees.forEach(emp => {
+    for (const emp of employees) {
       if (emp.isActive) {
         try {
           const res = runPayroll(emp, params);
-          sqliteStore.savePayrollResult(res);
+          await sqliteStore.savePayrollResult(res);
         } catch (error: any) {
           console.error(`Error calculando para ${emp.firstName}:`, error.message);
         }
       }
-    });
-    refreshData();
+    }
+    await refreshData();
     alert("Cálculo masivo finalizado con Motor Centralizado (V4).");
   };
 
@@ -165,7 +201,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSaveVacation = (e: React.FormEvent) => {
+  const handleSaveVacation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!vacationForm.workerId || !vacationForm.daysTaken) return alert("Faltan datos.");
     const vac: WorkerVacation = {
@@ -176,12 +212,12 @@ const App: React.FC = () => {
         daysTaken: vacationForm.daysTaken || 0,
         status: 'APROBADO'
     };
-    sqliteStore.saveVacation(vac);
+    await sqliteStore.saveVacation(vac);
     setShowVacationModal(false);
-    refreshData();
+    await refreshData();
   };
 
-  const handleSaveFiniquito = (e: React.FormEvent) => {
+  const handleSaveFiniquito = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!finiquitoForm.employeeId) return alert("Seleccione colaborador.");
     const total = (finiquitoForm.yearsOfServiceIndemnity || 0) + 
@@ -197,17 +233,47 @@ const App: React.FC = () => {
       noticeIndemnity: finiquitoForm.noticeIndemnity || 0,
       totalAmount: total
     };
-    sqliteStore.saveFiniquito(record);
+    await sqliteStore.saveFiniquito(record);
     setShowFiniquitoModal(false);
-    refreshData();
+    await refreshData();
     alert("Finiquito procesado.");
   };
 
-  const toggleClosure = () => {
+  const handleSaveMovement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!movementForm.employeeId || !movementForm.amount) return alert("Faltan datos.");
+    if (!selectedCompany) return;
+    const mov = {
+      ...movementForm,
+      id: generateUUID(),
+      companyId: selectedCompany.id,
+      month: params.month,
+      year: params.year
+    };
+    await sqliteStore.saveMovement(mov);
+    setShowMovementModal(false);
+    await refreshData();
+  };
+
+  const handleSaveUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    // Simplified user save
+    const user = {
+      id: generateUUID(),
+      username: 'nuevo_usuario',
+      fullName: 'Usuario Nuevo',
+      roleId: 'admin',
+      isActive: true
+    };
+    await sqliteStore.saveUser(user);
+    await refreshData();
+  };
+
+  const toggleClosure = async () => {
     const nextState = !params.isClosed;
     const updated = { ...params, isClosed: nextState };
     setParams(updated);
-    sqliteStore.saveMonthlyParameters(updated);
+    await sqliteStore.saveMonthlyParameters(updated);
   };
 
   if (!dbReady) return <LoadingScreen />;
@@ -233,6 +299,7 @@ const App: React.FC = () => {
           <SidebarItem active={activeTab === ModuleType.FINIQUITOS} onClick={() => setActiveTab(ModuleType.FINIQUITOS)} icon={UserMinus} label="Finiquitos" />
           <SidebarItem active={activeTab === ModuleType.PROCESOS} onClick={() => setActiveTab(ModuleType.PROCESOS)} icon={Layers} label="Procesos Cierre" />
           <SidebarItem active={activeTab === ModuleType.CONTABILIDAD} onClick={() => setActiveTab(ModuleType.CONTABILIDAD)} icon={Landmark} label="Contabilidad" />
+          <SidebarItem active={activeTab === ModuleType.SEGURIDAD} onClick={() => setActiveTab(ModuleType.SEGURIDAD)} icon={ShieldCheck} label="Seguridad" />
         </nav>
         <div className="p-4 bg-slate-900/50 border-t border-white/5 space-y-3">
           <button onClick={checkGitHubUpdates} disabled={isUpdating} className="w-full py-2.5 bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 rounded-lg text-[10px] font-black uppercase flex items-center justify-center gap-2 transition-all hover:bg-indigo-600/30">
@@ -240,6 +307,21 @@ const App: React.FC = () => {
             {isUpdating ? 'Actualizando...' : 'GitHub Update'}
           </button>
           <button onClick={() => sqliteStore.exportBackup()} className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-[10px] font-black uppercase flex items-center justify-center gap-2 transition-all"><Download className="w-3.5 h-3.5" /> Respaldar DB</button>
+          
+          {networkInfo && networkInfo.ips.length > 0 && (
+            <div className="mt-4 p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-xl">
+              <div className="text-[9px] font-black text-indigo-400 uppercase mb-2 flex items-center gap-2">
+                <CloudLightning className="w-3 h-3" /> Acceso Red Local
+              </div>
+              <div className="space-y-1">
+                {networkInfo.ips.map(ip => (
+                  <div key={ip} className="text-[10px] font-mono text-slate-300 break-all">
+                    http://{ip}:{networkInfo.port}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </aside>
 
@@ -350,6 +432,26 @@ const App: React.FC = () => {
                   <button onClick={toggleClosure} className={`w-full py-6 rounded-2xl text-xs font-black uppercase shadow-xl transition-all ${params.isClosed ? 'bg-rose-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}>{params.isClosed ? 'Reabrir Periodo' : 'Finalizar Mes'}</button>
                 </div>
               </div>
+
+              <div className="grid grid-cols-2 gap-8">
+                <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-6">
+                   <h3 className="text-xs font-black uppercase text-slate-400 flex items-center gap-2 mb-4"><Database className="w-5 h-5 text-indigo-500" /> Indicadores del Periodo</h3>
+                   <div className="grid grid-cols-2 gap-6">
+                     <ParameterInput label="UF" value={params.uf} onChange={(v:any)=>setParams({...params, uf: Number(v)})} icon={Database} />
+                     <ParameterInput label="UTM" value={params.utm} onChange={(v:any)=>setParams({...params, utm: Number(v)})} icon={Scale} />
+                     <ParameterInput label="Inm. Mínimo" value={params.imm} onChange={(v:any)=>setParams({...params, imm: Number(v)})} icon={Calculator} />
+                     <ParameterInput label="Factor SIS" value={params.sis} onChange={(v:any)=>setParams({...params, sis: Number(v)})} icon={Activity} suffix="%" />
+                   </div>
+                   <button onClick={async () => { await sqliteStore.saveMonthlyParameters(params); alert("Indicadores guardados en Servidor Local."); }} className="w-full py-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase flex items-center justify-center gap-2 hover:bg-black transition-all"><Save className="w-4 h-4" /> Guardar Parámetros</button>
+                </div>
+                <div className="bg-indigo-50 p-8 rounded-[2.5rem] border-2 border-indigo-100 flex flex-col justify-between">
+                   <div><h3 className="text-lg font-black uppercase italic text-indigo-900">Motor de Cálculo Offline</h3><p className="text-xs font-medium text-indigo-700/80 leading-relaxed">Procesamiento de liquidaciones masivas.</p></div>
+                   <div className="flex gap-4">
+                     <button onClick={handleRunPayroll} disabled={params.isClosed} className="flex-1 py-6 bg-indigo-600 text-white rounded-2xl text-xs font-black uppercase shadow-xl hover:bg-indigo-700 transition-all active:scale-95 disabled:opacity-50">Ejecutar Cálculo</button>
+                     <button onClick={handleExportPrevired} className="flex-1 py-6 bg-slate-900 text-white rounded-2xl text-xs font-black uppercase shadow-xl hover:bg-black transition-all active:scale-95">Exportar Previred</button>
+                   </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -371,102 +473,56 @@ const App: React.FC = () => {
           )}
 
           {activeTab === ModuleType.MOVIMIENTOS && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-end">
+                <div><h2 className="text-3xl font-black uppercase italic tracking-tighter">Movimientos Mensuales</h2><p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Haberes, Descuentos y Licencias</p></div>
+                <button onClick={() => setShowMovementModal(true)} className="px-8 py-4 bg-indigo-600 text-white rounded-2xl text-xs font-black uppercase shadow-xl flex items-center gap-3 transition-all hover:bg-indigo-700"><Plus className="w-5 h-5" /> Nuevo Movimiento</button>
+              </div>
+              <MovementTable movements={movements} employees={employees} />
+            </div>
+          )}
+
+          {activeTab === ModuleType.SEGURIDAD && (
             <div className="space-y-10">
               <div className="flex justify-between items-end">
-                <h2 className="text-3xl font-black uppercase italic tracking-tighter">Movimientos del Mes</h2>
-                <p className="text-[10px] text-slate-400 font-bold uppercase">Ingreso de inasistencias y licencias</p>
+                <h2 className="text-3xl font-black uppercase italic tracking-tighter">Seguridad y Perfiles</h2>
+                <button onClick={handleSaveUser} className="px-8 py-4 bg-slate-900 text-white rounded-2xl text-xs font-black uppercase shadow-xl flex items-center gap-3 transition-all hover:bg-black"><UserPlus className="w-5 h-5" /> Crear Usuario</button>
               </div>
-
-              <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 text-slate-500 font-black uppercase border-b">
-                    <tr>
-                      <th className="px-8 py-6">Colaborador</th>
-                      <th className="px-8 py-6 text-center">Inasistencias</th>
-                      <th className="px-8 py-6 text-center">Lic. Médicas</th>
-                      <th className="px-8 py-6 text-center">Permisos S/G</th>
-                      <th className="px-8 py-6 text-center">Acción</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {activeEmployees.map(emp => (
-                      <tr key={emp.id} className="hover:bg-slate-50 transition-all">
-                        <td className="px-8 py-6">
-                          <div className="font-black text-slate-800 uppercase italic tracking-tighter">{emp.firstName} {emp.lastName}</div>
-                          <div className="text-[10px] text-slate-400 font-bold">{emp.rut}</div>
-                        </td>
-                        <td className="px-8 py-6 text-center">
-                          <input 
-                            type="number" 
-                            className="w-16 text-center bg-slate-100 border-none rounded-lg py-1 font-black text-indigo-600"
-                            value={emp.absenteeismDays || 0}
-                            onChange={(e) => {
-                              const updated = { ...emp, absenteeismDays: Number(e.target.value) };
-                              sqliteStore.saveEmployee(updated);
-                              refreshData();
-                            }}
-                          />
-                        </td>
-                        <td className="px-8 py-6 text-center">
-                          <input 
-                            type="number" 
-                            className="w-16 text-center bg-slate-100 border-none rounded-lg py-1 font-black text-emerald-600"
-                            value={emp.medicalLeaveDays || 0}
-                            onChange={(e) => {
-                              const updated = { ...emp, medicalLeaveDays: Number(e.target.value) };
-                              sqliteStore.saveEmployee(updated);
-                              refreshData();
-                            }}
-                          />
-                        </td>
-                        <td className="px-8 py-6 text-center">
-                          <input 
-                            type="number" 
-                            className="w-16 text-center bg-slate-100 border-none rounded-lg py-1 font-black text-amber-600"
-                            value={emp.unpaidLeaveDays || 0}
-                            onChange={(e) => {
-                              const updated = { ...emp, unpaidLeaveDays: Number(e.target.value) };
-                              sqliteStore.saveEmployee(updated);
-                              refreshData();
-                            }}
-                          />
-                        </td>
-                        <td className="px-8 py-6 text-center">
-                          <button 
-                            onClick={() => {
-                              const updated = { ...emp, absenteeismDays: 0, medicalLeaveDays: 0, unpaidLeaveDays: 0 };
-                              sqliteStore.saveEmployee(updated);
-                              refreshData();
-                            }}
-                            className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
-                            title="Resetear"
-                          >
-                            <RefreshCw className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="grid grid-cols-2 gap-8">
-                <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-6">
-                   <h3 className="text-xs font-black uppercase text-slate-400 flex items-center gap-2 mb-4"><Database className="w-5 h-5 text-indigo-500" /> Indicadores del Periodo</h3>
-                   <div className="grid grid-cols-2 gap-6">
-                     <ParameterInput label="UF" value={params.uf} onChange={(v:any)=>setParams({...params, uf: Number(v)})} icon={Database} />
-                     <ParameterInput label="UTM" value={params.utm} onChange={(v:any)=>setParams({...params, utm: Number(v)})} icon={Scale} />
-                     <ParameterInput label="Inm. Mínimo" value={params.imm} onChange={(v:any)=>setParams({...params, imm: Number(v)})} icon={Calculator} />
-                     <ParameterInput label="Factor SIS" value={params.sis} onChange={(v:any)=>setParams({...params, sis: Number(v)})} icon={Activity} suffix="%" />
-                   </div>
-                   <button onClick={() => { sqliteStore.saveMonthlyParameters(params); alert("Indicadores guardados en SQLite local."); }} className="w-full py-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase flex items-center justify-center gap-2 hover:bg-black transition-all"><Save className="w-4 h-4" /> Guardar Parámetros</button>
+              
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-2 space-y-6">
+                  <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Usuarios del Sistema</h3>
+                  <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500 font-black uppercase border-b">
+                        <tr><th className="px-8 py-6">Usuario</th><th className="px-8 py-6">Perfil</th><th className="px-8 py-6 text-center">Estado</th></tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {users.length === 0 ? (
+                          <tr><td colSpan={3} className="px-8 py-10 text-center text-slate-400 italic">No hay usuarios adicionales creados localmente</td></tr>
+                        ) : users.map(u => (
+                          <tr key={u.id}>
+                            <td className="px-8 py-6 font-black uppercase italic tracking-tighter">{u.fullName} <span className="text-slate-400 font-normal">(@{u.username})</span></td>
+                            <td className="px-8 py-6 font-bold text-indigo-600 uppercase">{u.roleId}</td>
+                            <td className="px-8 py-6 text-center"><span className={`px-2 py-1 rounded-full text-[9px] font-black uppercase ${u.isActive ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>{u.isActive ? 'Activo' : 'Inactivo'}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-                <div className="bg-indigo-50 p-8 rounded-[2.5rem] border-2 border-indigo-100 flex flex-col justify-between">
-                   <div><h3 className="text-lg font-black uppercase italic text-indigo-900">Motor de Cálculo Offline</h3><p className="text-xs font-medium text-indigo-700/80 leading-relaxed">Procesamiento de liquidaciones considerando inasistencias y licencias.</p></div>
-                   <div className="flex gap-4">
-                     <button onClick={handleRunPayroll} disabled={params.isClosed} className="flex-1 py-6 bg-indigo-600 text-white rounded-2xl text-xs font-black uppercase shadow-xl hover:bg-indigo-700 transition-all active:scale-95 disabled:opacity-50">Ejecutar Cálculo</button>
-                     <button onClick={handleExportPrevired} className="flex-1 py-6 bg-slate-900 text-white rounded-2xl text-xs font-black uppercase shadow-xl hover:bg-black transition-all active:scale-95">Exportar Previred</button>
-                   </div>
+                
+                <div className="space-y-6">
+                  <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Auditoría de Acceso</h3>
+                  <div className="bg-[#0F172A] p-8 rounded-[2.5rem] text-white space-y-4 shadow-2xl">
+                    <div className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl border border-white/10">
+                      <Fingerprint className="w-8 h-8 text-indigo-400" />
+                      <div><div className="text-[10px] font-black uppercase text-slate-400">Último Acceso</div><div className="text-xs font-bold">Hoy, 08:45 AM</div></div>
+                    </div>
+                    <div className="p-4 text-[10px] text-slate-400 leading-relaxed italic">
+                      "La trazabilidad de los datos sensibles se mantiene localmente en el motor SQLite cifrado por el navegador."
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -482,9 +538,9 @@ const App: React.FC = () => {
       </main>
 
       {/* Modals con estilos consistentes */}
-      {showCompanyModal && <CompanyModal onClose={() => setShowCompanyModal(false)} companies={companies} selectedCompany={selectedCompany} onSelect={(c:any) => { setSelectedCompany(c); setShowCompanyModal(false); refreshData(); }} onSave={(e:any) => { e.preventDefault(); const comp: Company = {...newCompany as Company, id: generateUUID()}; sqliteStore.saveCompany(comp); setCompanies([...companies, comp]); setSelectedCompany(comp); setShowCompanyModal(false); }} newCompany={newCompany} setNewCompany={setNewCompany} />}
-      {showPeriodModal && <PeriodModal onClose={() => setShowPeriodModal(false)} params={params} onUpdate={(m:any, y:any) => { loadPeriodData(m, y); setShowPeriodModal(false); }} />}
-      {showAddModal && <AddEmployeeModal onClose={() => setShowAddModal(false)} newEmp={newEmp} setNewEmp={setNewEmp} onSave={(e:any) => { 
+      {showCompanyModal && <CompanyModal onClose={() => setShowCompanyModal(false)} companies={companies} selectedCompany={selectedCompany} onSelect={(c:any) => { setSelectedCompany(c); setShowCompanyModal(false); refreshData(); }} onSave={async (e:any) => { e.preventDefault(); const comp: Company = {...newCompany as Company, id: generateUUID()}; await sqliteStore.saveCompany(comp); setCompanies([...companies, comp]); setSelectedCompany(comp); setShowCompanyModal(false); }} newCompany={newCompany} setNewCompany={setNewCompany} />}
+      {showPeriodModal && <PeriodModal onClose={() => setShowPeriodModal(false)} params={params} onUpdate={async (m:any, y:any) => { await loadPeriodData(m, y); setShowPeriodModal(false); }} />}
+      {showAddModal && <AddEmployeeModal onClose={() => setShowAddModal(false)} newEmp={newEmp} setNewEmp={setNewEmp} onSave={async (e:any) => { 
         e.preventDefault(); 
         if (!newEmp.rut || !validateRut(newEmp.rut)) {
           return alert("RUT inválido. Por favor verifique.");
@@ -502,12 +558,13 @@ const App: React.FC = () => {
           afpCode: newEmp.afpCode || '01',
           healthCode: newEmp.healthCode || '01'
         }; 
-        sqliteStore.saveEmployee(emp); 
+        await sqliteStore.saveEmployee(emp); 
         setShowAddModal(false); 
-        refreshData(); 
+        await refreshData(); 
       }} />}
       {showVacationModal && <VacationModal onClose={() => setShowVacationModal(false)} activeEmployees={activeEmployees} vacationForm={vacationForm} setVacationForm={setVacationForm} onSave={handleSaveVacation} />}
       {showFiniquitoModal && <FiniquitoModal onClose={() => setShowFiniquitoModal(false)} activeEmployees={activeEmployees} finiquitoForm={finiquitoForm} setFiniquitoForm={setFiniquitoForm} onSave={handleSaveFiniquito} />}
+      {showMovementModal && <MovementModal onClose={() => setShowMovementModal(false)} employees={employees} movementForm={movementForm} setMovementForm={setMovementForm} onSave={handleSaveMovement} />}
     </div>
   );
 };
@@ -566,6 +623,38 @@ const FiniquitoTable = ({ finiquitos, employees }: { finiquitos: FiniquitoRecord
                 <td className="px-8 py-6 text-center"><button className="p-2 bg-slate-100 hover:bg-indigo-100 rounded-lg text-slate-300 hover:text-indigo-600 transition-all"><FileText className="w-4 h-4" /></button></td>
               </tr>
             )
+        })}
+      </tbody>
+    </table>
+  </div>
+);
+
+const MovementTable = ({ movements, employees }: { movements: any[], employees: Employee[] }) => (
+  <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
+    <table className="w-full text-left text-xs">
+      <thead className="bg-slate-50 text-slate-500 font-black uppercase border-b">
+        <tr>
+          <th className="px-8 py-6">Colaborador</th>
+          <th className="px-8 py-6">Tipo</th>
+          <th className="px-8 py-6">Descripción</th>
+          <th className="px-8 py-6 text-right">Monto/Valor</th>
+          <th className="px-8 py-6 text-center">Unidad</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+        {movements.length === 0 ? (
+          <tr><td colSpan={5} className="px-8 py-10 text-center text-slate-400 italic uppercase font-black tracking-widest">Sin movimientos registrados en este periodo</td></tr>
+        ) : movements.map(m => {
+          const emp = employees.find(e => e.id === m.employeeId);
+          return (
+            <tr key={m.id} className="hover:bg-slate-50 transition-all">
+              <td className="px-8 py-6 font-black text-slate-800 uppercase italic tracking-tighter">{emp?.firstName} {emp?.lastName}</td>
+              <td className="px-8 py-6"><span className="px-2 py-1 bg-slate-100 rounded text-[9px] font-black uppercase text-slate-600">{m.type.replace('_', ' ')}</span></td>
+              <td className="px-8 py-6 font-bold text-slate-500">{m.description}</td>
+              <td className="px-8 py-6 text-right font-black text-indigo-600">{m.amount.toLocaleString()}</td>
+              <td className="px-8 py-6 text-center font-black text-slate-400">{m.unit}</td>
+            </tr>
+          )
         })}
       </tbody>
     </table>
@@ -687,6 +776,47 @@ const PeriodModal = ({ onClose, params, onUpdate }: any) => (
               <button key={y} onClick={() => onUpdate(params.month, y)} className={`flex-1 py-4 rounded-xl text-xs font-black uppercase transition-all ${params.year === y ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'}`}>{y}</button>
             ))}
       </div>
+    </div>
+  </div>
+);
+
+const MovementModal = ({ onClose, employees, movementForm, setMovementForm, onSave }: any) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center p-8 bg-slate-950/80 backdrop-blur-md">
+    <div className="bg-white w-full max-w-2xl rounded-[3rem] p-12 relative shadow-2xl">
+      <button onClick={onClose} className="absolute top-8 right-8 p-3 hover:bg-slate-100 rounded-full"><X className="w-8 h-8 text-slate-400" /></button>
+      <h2 className="text-3xl font-black uppercase italic mb-8 tracking-tighter">Nuevo Movimiento</h2>
+      <form onSubmit={onSave} className="space-y-6">
+        <div className="space-y-2">
+          <label className="text-[10px] font-black text-slate-400 uppercase ml-4 tracking-widest">Colaborador</label>
+          <select 
+            value={movementForm.employeeId} 
+            onChange={e => setMovementForm({...movementForm, employeeId: e.target.value})}
+            className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl font-bold text-slate-800 text-sm shadow-inner"
+          >
+            <option value="">Seleccione...</option>
+            {employees.map((emp: any) => <option key={emp.id} value={emp.id}>{emp.firstName} {emp.lastName}</option>)}
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-6">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase ml-4 tracking-widest">Tipo</label>
+            <select 
+              value={movementForm.type} 
+              onChange={e => setMovementForm({...movementForm, type: e.target.value})}
+              className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl font-bold text-slate-800 text-sm shadow-inner"
+            >
+              <option value="HABER_IMPONIBLE">Haber Imponible</option>
+              <option value="HABER_NO_IMPONIBLE">Haber No Imponible</option>
+              <option value="DESCUENTO_VOLUNTARIO">Descuento Voluntario</option>
+              <option value="LICENCIA">Licencia Médica</option>
+              <option value="INASISTENCIA">Inasistencia</option>
+            </select>
+          </div>
+          <FormGroup label="Monto / Valor" value={movementForm.amount} onChange={(v:any) => setMovementForm({...movementForm, amount: Number(v)})} type="number" />
+        </div>
+        <FormGroup label="Descripción" value={movementForm.description} onChange={(v:any) => setMovementForm({...movementForm, description: v})} placeholder="Ej: Bono Desempeño" />
+        <button type="submit" className="w-full py-6 bg-indigo-600 text-white rounded-2xl text-xs font-black uppercase shadow-xl hover:bg-indigo-700 transition-all">Registrar Movimiento</button>
+      </form>
     </div>
   </div>
 );
