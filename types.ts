@@ -138,7 +138,6 @@ export interface Company {
   name: string;
   address: string;
   activityCode: string;
-  apiKey?: string;
 }
 
 export interface AccountMapping {

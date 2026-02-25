@@ -4,9 +4,9 @@ import {
   Users, Calculator, Layers, FileText, Database, Activity, 
   Briefcase, CloudLightning, RefreshCw, ArrowRightLeft, 
   BadgeCheck, Scale, LayoutDashboard, X, Plus, 
-  CheckCircle2, Save, TrendingUp, Download, Lock, Unlock,
+  CheckCircle2, Save, TrendingUp, Download,
   UserMinus, Receipt, Landmark, Umbrella, ChevronDown, Building2,
-  FileSpreadsheet, ShieldAlert, FileCheck, CreditCard, Github
+  FileSpreadsheet, FileCheck, CreditCard, Github
 } from 'lucide-react';
 import { ModuleType, Employee, MonthlyParameters, PayrollResult, Company, FiniquitoRecord, WorkerVacation } from './types';
 import { sqliteStore, initSqlite } from './store/sqliteEngine';
@@ -258,7 +258,6 @@ const App: React.FC = () => {
               </button>
               <div className="w-px h-8 bg-slate-300 mx-1"></div>
               <button onClick={toggleClosure} className={`px-6 py-2 flex items-center gap-2 rounded-xl transition-all ${params.isClosed ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                {params.isClosed ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
                 <span className="text-[10px] font-black uppercase">{params.isClosed ? 'Cerrado' : 'Abierto'}</span>
               </button>
             </div>
@@ -347,8 +346,8 @@ const App: React.FC = () => {
                   <CheckItem label="Integridad de Datos" value="Verificada" status={true} />
                 </div>
                 <div className="bg-[#0F172A] p-10 rounded-[3rem] text-white flex flex-col justify-between shadow-2xl">
-                  <div><ShieldAlert className="w-12 h-12 text-amber-500 mb-6" /><h4 className="text-xl font-black italic uppercase mb-4">Cierre Definitivo</h4><p className="text-xs text-slate-400 leading-relaxed">Bloquea la edición del periodo local {MONTHS[params.month-1]}. No requiere internet para ejecutarse.</p></div>
-                  <button onClick={toggleClosure} className={`w-full py-6 rounded-2xl text-xs font-black uppercase shadow-xl transition-all ${params.isClosed ? 'bg-rose-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}>{params.isClosed ? 'Reabrir Periodo' : 'Cerrar Mes Local'}</button>
+                  <div><Activity className="w-12 h-12 text-amber-500 mb-6" /><h4 className="text-xl font-black italic uppercase mb-4">Estado del Periodo</h4><p className="text-xs text-slate-400 leading-relaxed">Marca el periodo {MONTHS[params.month-1]} como finalizado para evitar cambios accidentales.</p></div>
+                  <button onClick={toggleClosure} className={`w-full py-6 rounded-2xl text-xs font-black uppercase shadow-xl transition-all ${params.isClosed ? 'bg-rose-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}>{params.isClosed ? 'Reabrir Periodo' : 'Finalizar Mes'}</button>
                 </div>
               </div>
             </div>
@@ -458,7 +457,7 @@ const App: React.FC = () => {
                      <ParameterInput label="UF" value={params.uf} onChange={(v:any)=>setParams({...params, uf: Number(v)})} icon={Database} />
                      <ParameterInput label="UTM" value={params.utm} onChange={(v:any)=>setParams({...params, utm: Number(v)})} icon={Scale} />
                      <ParameterInput label="Inm. Mínimo" value={params.imm} onChange={(v:any)=>setParams({...params, imm: Number(v)})} icon={Calculator} />
-                     <ParameterInput label="Factor SIS" value={params.sis} onChange={(v:any)=>setParams({...params, sis: Number(v)})} icon={ShieldAlert} suffix="%" />
+                     <ParameterInput label="Factor SIS" value={params.sis} onChange={(v:any)=>setParams({...params, sis: Number(v)})} icon={Activity} suffix="%" />
                    </div>
                    <button onClick={() => { sqliteStore.saveMonthlyParameters(params); alert("Indicadores guardados en SQLite local."); }} className="w-full py-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase flex items-center justify-center gap-2 hover:bg-black transition-all"><Save className="w-4 h-4" /> Guardar Parámetros</button>
                 </div>

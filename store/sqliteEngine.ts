@@ -32,7 +32,7 @@ export const initSqlite = async (): Promise<void> => {
 const createTables = () => {
   if (!db) return;
   db.run(`
-    CREATE TABLE IF NOT EXISTS companies (id TEXT PRIMARY KEY, rut TEXT, name TEXT, address TEXT, activityCode TEXT, apiKey TEXT);
+    CREATE TABLE IF NOT EXISTS companies (id TEXT PRIMARY KEY, rut TEXT, name TEXT, address TEXT, activityCode TEXT);
     CREATE TABLE IF NOT EXISTS employees (
       id TEXT PRIMARY KEY, companyId TEXT, rut TEXT, firstName TEXT, lastName TEXT, email TEXT, 
       baseSalary REAL, position TEXT, costCenterId TEXT, supervisorId TEXT, startDate TEXT, 
@@ -72,14 +72,14 @@ const persistDb = () => {
 export const sqliteStore = {
   saveCompany: (c: Company) => {
     if (!db) return;
-    db.run("INSERT OR REPLACE INTO companies VALUES (?,?,?,?,?,?)", [c.id, c.rut, c.name, c.address, c.activityCode, c.apiKey || '']);
+    db.run("INSERT OR REPLACE INTO companies VALUES (?,?,?,?,?)", [c.id, c.rut, c.name, c.address, c.activityCode]);
     persistDb();
   },
   getCompanies: (): Company[] => {
     if (!db) return [];
     try {
       const res = db.exec("SELECT * FROM companies");
-      return res.length > 0 ? res[0].values.map((v: any) => ({ id: v[0], rut: v[1], name: v[2], address: v[3], activityCode: v[4], apiKey: v[5] })) : [];
+      return res.length > 0 ? res[0].values.map((v: any) => ({ id: v[0], rut: v[1], name: v[2], address: v[3], activityCode: v[4] })) : [];
     } catch (e) { return []; }
   },
   saveEmployee: (e: Employee) => {
@@ -161,41 +161,17 @@ export const sqliteStore = {
   },
   savePayrollResult: (r: PayrollResult) => {
     if (!db) return;
-    
-    // Buscar la versión más alta existente para este empleado y periodo
-    const stmt = db.prepare("SELECT MAX(version) FROM payroll_results WHERE employeeId = ? AND month = ? AND year = ?");
-    stmt.bind([r.employeeId, r.month, r.year]);
-    let nextVersion = 1;
-    if (stmt.step()) {
-      const maxV = stmt.get()[0];
-      if (maxV !== null) {
-        nextVersion = maxV + 1;
-      }
-    }
-    stmt.free();
-
-    const auditStr = r.audit ? JSON.stringify({ ...r.audit, version: nextVersion }) : JSON.stringify({ version: nextVersion });
-    
+    const auditStr = r.audit ? JSON.stringify(r.audit) : null;
     db.run("INSERT OR REPLACE INTO payroll_results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
       r.id, r.employeeId, r.month, r.year, r.grossSalary, r.taxableSalary, r.legalGratification,
       r.afpAmount, r.healthAmount, r.taxAmount, r.loanDeduction, r.netSalary, r.costCenterId, r.bonuses, r.discounts,
-      r.absenteeismDays, r.medicalLeaveDays, r.unpaidLeaveDays, nextVersion, auditStr
+      r.absenteeismDays, r.medicalLeaveDays, r.unpaidLeaveDays, r.version || 1, auditStr
     ]);
     persistDb();
   },
   getPayrollResults: (month: number, year: number): PayrollResult[] => {
     if (!db) return [];
-    // Seleccionar solo la versión más alta para cada empleado en el periodo dado
-    const stmt = db.prepare(`
-      SELECT * FROM payroll_results 
-      WHERE month = ? AND year = ? 
-      AND version = (
-        SELECT MAX(version) FROM payroll_results AS pr2 
-        WHERE pr2.employeeId = payroll_results.employeeId 
-        AND pr2.month = payroll_results.month 
-        AND pr2.year = payroll_results.year
-      )
-    `);
+    const stmt = db.prepare("SELECT * FROM payroll_results WHERE month = ? AND year = ?");
     stmt.bind([month, year]);
     const results = [];
     while (stmt.step()) {
