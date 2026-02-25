@@ -1,21 +1,21 @@
-
+﻿
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RemunPro Analytics - Edición Local</title>
+    <title>RemunPro Analytics - EdiciÃ³n Local</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
-    <!-- El script de SQL.js se carga de forma asíncrona pero sin bloquear el render principal -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js" async></script>
+    <!-- El script de SQL.js se carga antes del entrypoint para asegurar initSqlJs disponible -->
+     <!-- El script de SQL.js se carga antes del entrypoint para asegurar initSqlJs disponible x2 para ver si pasa algo -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js" defer></script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
     </style>
-    <link rel="stylesheet" href="/index.css">
 </head>
 <body class="overflow-hidden">
     <div id="root"></div>
