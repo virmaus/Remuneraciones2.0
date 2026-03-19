@@ -1,5 +1,5 @@
 
-import { Company, Employee, PayrollResult, MonthlyParameters, FiniquitoRecord, WorkerVacation } from '../types';
+import { Company, Employee, PayrollResult, MonthlyMovement, MonthlyParameters, FiniquitoRecord, WorkerVacation } from '../types';
 
 const API_BASE = '/api';
 
@@ -102,14 +102,14 @@ export const sqliteStore = {
     const res = await fetch(`${API_BASE}/roles`);
     return res.json();
   },
-  saveMovement: async (m: any) => {
+  saveMovement: async (m: MonthlyMovement) => {
     await fetch(`${API_BASE}/movements`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(m)
     });
   },
-  getMovements: async (companyId: string, month: number, year: number): Promise<any[]> => {
+  getMovements: async (companyId: string, month: number, year: number): Promise<MonthlyMovement[]> => {
     const res = await fetch(`${API_BASE}/movements/${companyId}/${month}/${year}`);
     return res.json();
   },

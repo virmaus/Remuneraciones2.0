@@ -9,15 +9,15 @@ import {
   FileSpreadsheet, FileCheck, CreditCard, Github, ShieldCheck, ShieldAlert,
   Lock, Unlock, UserPlus, Fingerprint, Pencil
 } from 'lucide-react';
-import { ModuleType, Employee, MonthlyParameters, PayrollResult, Company, FiniquitoRecord, WorkerVacation } from './types';
+import { ModuleType, Employee, MonthlyMovement, MonthlyParameters, PayrollResult, Company, FiniquitoRecord, WorkerVacation, User, UserRole } from './types';
 import { sqliteStore, initSqlite } from './store/sqliteEngine';
-import { runPayroll } from './payroll-engine';
 import { Dashboard } from './components/Dashboard';
 import { AccountingExport } from './components/AccountingExport';
 import { validateRut, normalizeRut, cleanRut } from './utils/rutUtils';
 import { PreviredExporter } from './export/previred';
 import { generatePayslipHTML, printPayslip } from './utils/payslipGenerator';
 import { generateUUID } from './utils/uuid';
+import { buildPayrollResultsForPeriod } from './services/payrollBatchService';
 
 const TERMINATION_CAUSES = [
   "Art. 159 N°1 - Mutuo acuerdo de las partes",
@@ -51,11 +51,11 @@ const App: React.FC = () => {
   const [showMovementModal, setShowMovementModal] = useState(false);
   const [showUserModal, setShowUserModal] = useState(false);
 
-  const [users, setUsers] = useState<any[]>([]);
-  const [roles, setRoles] = useState<any[]>([]);
-  const [movements, setMovements] = useState<any[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [roles, setRoles] = useState<UserRole[]>([]);
+  const [movements, setMovements] = useState<MonthlyMovement[]>([]);
   const [networkInfo, setNetworkInfo] = useState<{ips: string[], port: number} | null>(null);
-  const [currentUser, setCurrentUser] = useState<any>({ id: 'admin-01', username: 'admin', fullName: 'Administrador Central', roleId: 'admin' });
+  const [currentUser, setCurrentUser] = useState<User>({ id: 'admin-01', username: 'admin', fullName: 'Administrador Central', roleId: 'admin', isActive: true });
 
   const [movementForm, setMovementForm] = useState<any>({
     employeeId: '', type: 'HABER_IMPONIBLE', description: '', amount: 0, unit: 'PESOS', date: new Date().toISOString().split('T')[0]
@@ -177,7 +177,12 @@ const App: React.FC = () => {
     for (const emp of employees) {
       if (emp.isActive) {
         try {
-          const res = runPayroll(emp, params);
+          const res = buildPayrollResultsForPeriod({
+            employees: [emp],
+            params,
+            movements,
+            calculatedBy: currentUser.username
+          })[0];
           await sqliteStore.savePayrollResult(res);
         } catch (error: any) {
           console.error(`Error calculando para ${emp.firstName}:`, error.message);
@@ -190,8 +195,12 @@ const App: React.FC = () => {
 
   const handleExportPrevired = () => {
     if (!selectedCompany) return;
-    const exporter = new PreviredExporter(employees, payrollResults, selectedCompany, params);
-    exporter.download();
+    try {
+      const exporter = new PreviredExporter(employees, payrollResults, selectedCompany, params);
+      exporter.download();
+    } catch (error: any) {
+      alert(error.message);
+    }
   };
 
   const handlePrintPayslip = (res: PayrollResult) => {
@@ -245,7 +254,7 @@ const App: React.FC = () => {
     e.preventDefault();
     if (!movementForm.employeeId || !movementForm.amount) return alert("Faltan datos.");
     if (!selectedCompany) return;
-    const mov = {
+    const mov: MonthlyMovement = {
       ...movementForm,
       id: generateUUID(),
       companyId: selectedCompany.id,
@@ -355,8 +364,8 @@ const App: React.FC = () => {
               className="mt-2 w-full bg-slate-800 border-none rounded-lg text-[9px] font-black uppercase text-slate-400 py-2 px-3 focus:ring-0 cursor-pointer"
               onChange={(e) => {
                 const val = e.target.value;
-                if (val === 'admin') setCurrentUser({ id: 'admin-01', username: 'admin', fullName: 'Administrador Central', roleId: 'admin' });
-                else setCurrentUser({ id: 'op-01', username: 'operador', fullName: 'Operador de Turno', roleId: 'operador' });
+                if (val === 'admin') setCurrentUser({ id: 'admin-01', username: 'admin', fullName: 'Administrador Central', roleId: 'admin', isActive: true });
+                else setCurrentUser({ id: 'op-01', username: 'operador', fullName: 'Operador de Turno', roleId: 'operador', isActive: true });
               }}
               value={currentUser.roleId}
             >

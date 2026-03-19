@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import { createServer as createViteServer } from 'vite';
 import Database from 'better-sqlite3';
+import fs from 'fs';
 import path from 'path';
 import { networkInterfaces } from 'os';
 import { fileURLToPath } from 'url';
@@ -210,6 +211,17 @@ async function startServer() {
       }
     }
     res.json({ ips: results, port: PORT });
+  });
+
+  app.get('/api/backup', (req, res) => {
+    const dbPath = path.resolve(__dirname, 'remunpro.db');
+
+    if (!fs.existsSync(dbPath)) {
+      return res.status(404).json({ error: 'No se encontro la base de datos para respaldo.' });
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    res.download(dbPath, `remunpro-backup-${timestamp}.db`);
   });
 
   // Vite middleware for development

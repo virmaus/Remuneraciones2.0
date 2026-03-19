@@ -1,9 +1,9 @@
-
 import { Decimal } from 'decimal.js';
-import { Employee, MonthlyParameters, PayrollResult } from '../types';
+import { Employee, MonthlyMovement, MonthlyParameters, PayrollResult } from '../types';
 import { generateUUID } from '../utils/uuid';
+import { summarizeMonthlyMovements } from './movements';
 
-// Configurar precisión global para cálculos financieros
+// Configure global precision for financial calculations.
 Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP });
 
 const TAX_TABLE = [
@@ -14,56 +14,66 @@ const TAX_TABLE = [
   { limit: 90, factor: 0.23, deduction: 11.14 },
   { limit: 120, factor: 0.304, deduction: 17.8 },
   { limit: 310, factor: 0.35, deduction: 23.32 },
-  { limit: Infinity, factor: 0.40, deduction: 38.82 }
+  { limit: Infinity, factor: 0.4, deduction: 38.82 },
 ];
 
 /**
- * Módulo puro de cálculo de nómina.
- * No tiene efectos secundarios y garantiza inmutabilidad en la salida.
+ * Pure payroll engine that centralizes remuneration logic.
  */
-export const calculatePayrollInternal = (employee: Employee, params: MonthlyParameters): Readonly<PayrollResult> => {
-  // 1. Normalización de entradas
+export const calculatePayrollInternal = (
+  employee: Employee,
+  params: MonthlyParameters,
+  movements: MonthlyMovement[] = []
+): Readonly<PayrollResult> => {
   const baseSalary = new Decimal(employee.baseSalary);
   const uf = new Decimal(params.uf);
   const utm = new Decimal(params.utm);
   const imm = new Decimal(params.imm);
-  const absenteeismDays = new Decimal(employee.absenteeismDays || 0);
-  const medicalLeaveDays = new Decimal(employee.medicalLeaveDays || 0);
-  const unpaidLeaveDays = new Decimal(employee.unpaidLeaveDays || 0);
+  const movementTotals = summarizeMonthlyMovements(employee, params, movements);
 
-  // 2. Cálculo de Haberes
+  const absenteeismDays = new Decimal(employee.absenteeismDays || 0).plus(movementTotals.absenteeismDays);
+  const medicalLeaveDays = new Decimal(employee.medicalLeaveDays || 0).plus(movementTotals.medicalLeaveDays);
+  const unpaidLeaveDays = new Decimal(employee.unpaidLeaveDays || 0).plus(movementTotals.unpaidLeaveDays);
+  const taxableBonuses = movementTotals.taxableBonuses;
+  const nonTaxableBonuses = movementTotals.nonTaxableBonuses;
+  const legalMovementDiscounts = movementTotals.legalDiscounts;
+  const voluntaryMovementDiscounts = movementTotals.voluntaryDiscounts;
+  const loanDeduction = movementTotals.loanDeduction;
+  const apvAmount = new Decimal(employee.apvAmount || 0);
+  const afcRate = employee.afcStatus ? new Decimal(0.006) : new Decimal(0);
+  const heavyWorkRate = new Decimal(employee.heavyWork || 0).div(100);
+
   const totalDiscountDays = absenteeismDays.plus(medicalLeaveDays).plus(unpaidLeaveDays);
   const dayValue = baseSalary.div(30);
-  const absenteeismDiscount = dayValue.times(totalDiscountDays).toDecimalPlaces(0);
-  
-  const adjustedBaseSalary = baseSalary.minus(absenteeismDiscount);
-  
-  // Gratificación Legal Art 47 (25% con tope de 4.75 IMM)
+  const dayBasedDiscount = dayValue.times(totalDiscountDays).toDecimalPlaces(0);
+
+  const adjustedBaseSalary = Decimal.max(baseSalary.minus(dayBasedDiscount), 0);
+
   const monthlyGratificationCap = imm.times(4.75).div(12);
   const rawGratification = adjustedBaseSalary.times(0.25);
-  const legalGratification = rawGratification.gt(monthlyGratificationCap) 
-    ? monthlyGratificationCap 
+  const legalGratification = rawGratification.gt(monthlyGratificationCap)
+    ? monthlyGratificationCap
     : rawGratification;
 
-  const taxableSalary = adjustedBaseSalary.plus(legalGratification);
-  
-  // Tope Imponible Chile (UF * 81.6 aprox)
+  const taxableSalary = adjustedBaseSalary.plus(legalGratification).plus(taxableBonuses);
   const taxableCap = uf.times(81.6);
   const finalTaxable = taxableSalary.gt(taxableCap) ? taxableCap : taxableSalary;
 
-  // 3. Cálculo de Cotizaciones
-  const afpRate = new Decimal(0.1115); 
+  const afpRate = new Decimal(0.1115);
   const healthRate = new Decimal(0.07);
-
   const afpAmount = finalTaxable.times(afpRate).toDecimalPlaces(0);
   const healthAmount = finalTaxable.times(healthRate).toDecimalPlaces(0);
+  const afcAmount = finalTaxable.times(afcRate).toDecimalPlaces(0);
+  const heavyWorkAmount = finalTaxable.times(heavyWorkRate).toDecimalPlaces(0);
 
-  // 4. Cálculo de Impuestos
-  const taxBase = finalTaxable.minus(afpAmount).minus(healthAmount);
+  const taxBase = Decimal.max(
+    finalTaxable.minus(afpAmount).minus(healthAmount).minus(afcAmount).minus(heavyWorkAmount).minus(apvAmount),
+    0
+  );
   const taxBaseInUtm = taxBase.div(utm);
-  
+
   let taxAmount = new Decimal(0);
-  
+
   for (const tramo of TAX_TABLE) {
     if (taxBaseInUtm.lte(tramo.limit)) {
       if (tramo.factor > 0) {
@@ -73,19 +83,24 @@ export const calculatePayrollInternal = (employee: Employee, params: MonthlyPara
     }
   }
 
-  // 5. Cálculo Líquido
-  const netSalary = taxableSalary
+  const totalEarnings = taxableSalary.plus(nonTaxableBonuses);
+  const otherDiscounts = legalMovementDiscounts
+    .plus(voluntaryMovementDiscounts)
+    .plus(apvAmount)
+    .plus(afcAmount)
+    .plus(heavyWorkAmount);
+  const netSalary = totalEarnings
     .minus(afpAmount)
     .minus(healthAmount)
-    .minus(taxAmount);
+    .minus(taxAmount)
+    .minus(otherDiscounts);
 
-  // 6. Construcción del Resultado Inmutable
   const result: PayrollResult = {
     id: generateUUID(),
     employeeId: employee.id,
     month: params.month,
     year: params.year,
-    grossSalary: taxableSalary.toDecimalPlaces(0).toNumber(),
+    grossSalary: totalEarnings.toDecimalPlaces(0).toNumber(),
     taxableSalary: finalTaxable.toDecimalPlaces(0).toNumber(),
     legalGratification: legalGratification.toDecimalPlaces(0).toNumber(),
     taxAmount: taxAmount.toDecimalPlaces(0).toNumber(),
@@ -93,18 +108,18 @@ export const calculatePayrollInternal = (employee: Employee, params: MonthlyPara
     isClosed: false,
     afpAmount: afpAmount.toDecimalPlaces(0).toNumber(),
     healthAmount: healthAmount.toDecimalPlaces(0).toNumber(),
-    loanDeduction: 0,
+    loanDeduction: loanDeduction.toDecimalPlaces(0).toNumber(),
     costCenterId: employee.costCenterId,
-    bonuses: 0,
-    discounts: absenteeismDiscount.toDecimalPlaces(0).toNumber(),
-    absenteeismDays: employee.absenteeismDays || 0,
-    medicalLeaveDays: employee.medicalLeaveDays || 0,
-    unpaidLeaveDays: employee.unpaidLeaveDays || 0,
-    version: 1,
+    bonuses: taxableBonuses.plus(nonTaxableBonuses).toDecimalPlaces(0).toNumber(),
+    discounts: otherDiscounts.plus(dayBasedDiscount).toDecimalPlaces(0).toNumber(),
+    absenteeismDays: absenteeismDays.toNumber(),
+    medicalLeaveDays: medicalLeaveDays.toNumber(),
+    unpaidLeaveDays: unpaidLeaveDays.toNumber(),
+    version: 2,
     audit: {
       calculatedAt: new Date().toISOString(),
-      calculatedBy: 'PAYROLL_ENGINE_V4_PURE'
-    }
+      calculatedBy: 'PAYROLL_ENGINE_V5_EXTENDED',
+    },
   };
 
   return Object.freeze(result);

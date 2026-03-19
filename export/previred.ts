@@ -1,9 +1,13 @@
-
-import { Employee, PayrollResult, Company, MonthlyParameters } from '../types';
+import { Company, Employee, MonthlyParameters, PayrollResult } from '../types';
+import {
+  buildPreviredFields,
+  PREVIRED_FIELD_COUNT,
+  serializePreviredRow,
+  validatePreviredData,
+} from './previredLayout';
 
 /**
- * Módulo de exportación Previred (Formato 105 campos)
- * Esta es una implementación simplificada del generador de archivo plano.
+ * Previred exporter with a normalized 105-field structure.
  */
 export class PreviredExporter {
   private employees: Employee[];
@@ -23,73 +27,48 @@ export class PreviredExporter {
     this.params = params;
   }
 
-  public generateFileContent(): string {
-    let content = '';
-    
-    // Header (Opcional según versión, usualmente se omiten en carga masiva simple)
-    // Pero generaremos los registros de trabajadores
-    
+  public validate(): string[] {
+    const errors: string[] = [];
+
     for (const result of this.results) {
-      const employee = this.employees.find(e => e.id === result.employeeId);
-      if (!employee) continue;
-      
-      content += this.generateEmployeeRow(employee, result) + '\r\n';
+      const employee = this.employees.find(item => item.id === result.employeeId);
+      if (!employee) {
+        errors.push(`No se encontro colaborador para el resultado ${result.id}`);
+        continue;
+      }
+
+      errors.push(...validatePreviredData(employee, result, this.company, this.params));
     }
-    
-    return content;
+
+    return errors;
   }
 
-  private generateEmployeeRow(employee: Employee, result: PayrollResult): string {
-    const fields: string[] = [];
-    
-    // RUT Trabajador (Sin puntos ni guion, 11 caracteres, relleno ceros izquierda)
-    const rutClean = employee.rut.replace(/[^0-9kK]/g, '');
-    const rutBody = rutClean.slice(0, -1).padStart(9, '0');
-    const rutDv = rutClean.slice(-1).toUpperCase();
-    fields.push(rutBody);
-    fields.push(rutDv);
-    
-    // Apellidos y Nombres
-    fields.push(employee.lastName.padEnd(30, ' ').slice(0, 30));
-    fields.push(employee.firstName.padEnd(30, ' ').slice(0, 30));
-    
-    // Sexo (M/F) - Por defecto M si no está definido
-    fields.push('M');
-    
-    // Nacionalidad (0: Chilena, 1: Extranjera)
-    fields.push('0');
-    
-    // Tipo Pago (1: Normal, 2: Gratificación, etc)
-    fields.push('1');
-    
-    // Periodo (AAAAMM)
-    const period = `${this.params.year}${this.params.month.toString().padStart(2, '0')}`;
-    fields.push(period);
-    
-    // Código AFP (Previred)
-    fields.push((employee.afpCode || '01').padStart(2, '0'));
-    
-    // Renta Imponible
-    fields.push(result.taxableSalary.toString().padStart(10, '0'));
-    
-    // Días Trabajados
-    const workedDays = 30 - (result.absenteeismDays || 0) - (result.medicalLeaveDays || 0) - (result.unpaidLeaveDays || 0);
-    fields.push(workedDays.toString().padStart(2, '0'));
-    
-    // ... Muchos otros campos requeridos por el formato 105 campos ...
-    // Para efectos de este ejemplo, unimos los campos con punto y coma o ancho fijo
-    // El formato real es de ANCHO FIJO.
-    
-    return fields.join('');
+  public generateFileContent(): string {
+    return this.results
+      .map(result => {
+        const employee = this.employees.find(item => item.id === result.employeeId);
+        if (!employee) return null;
+
+        const fields = buildPreviredFields(employee, result, this.company, this.params);
+        return serializePreviredRow(fields);
+      })
+      .filter((row): row is string => Boolean(row))
+      .join('\r\n');
   }
 
   public download() {
+    const errors = this.validate();
+    if (errors.length > 0) {
+      throw new Error(errors.join('\n'));
+    }
+
     const content = this.generateFileContent();
-    const blob = new Blob([content], { type: 'text/plain' });
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `previred_${this.params.year}_${this.params.month}.txt`;
-    a.click();
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `previred_${this.params.year}_${this.params.month}_${PREVIRED_FIELD_COUNT}campos.txt`;
+    anchor.click();
+    URL.revokeObjectURL(url);
   }
 }

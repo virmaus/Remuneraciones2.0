@@ -1,19 +1,19 @@
-
-import { Employee, MonthlyParameters, PayrollResult } from '../types';
-import { validatePayrollInputs } from './validator';
+import { Employee, MonthlyMovement, MonthlyParameters, PayrollResult } from '../types';
 import { calculatePayrollInternal } from './engine';
+import { validatePayrollInputs } from './validator';
 
 /**
- * API Pública del Motor de Cálculo de Nómina.
- * Realiza validación de entradas y devuelve un resultado inmutable.
+ * Public payroll engine API.
  */
-export const runPayroll = (employee: Employee, params: MonthlyParameters): Readonly<PayrollResult> => {
-  // 1. Validar entradas
+export const runPayroll = (
+  employee: Employee,
+  params: MonthlyParameters,
+  movements: MonthlyMovement[] = []
+): Readonly<PayrollResult> => {
   validatePayrollInputs(employee, params);
-  
-  // 2. Ejecutar cálculo puro
-  return calculatePayrollInternal(employee, params);
+  return calculatePayrollInternal(employee, params, movements);
 };
 
-export * from './validator';
 export * from './engine';
+export * from './movements';
+export * from './validator';

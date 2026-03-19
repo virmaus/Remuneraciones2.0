@@ -1,5 +1,5 @@
 
-import { Employee, MonthlyParameters, PayrollResult } from '../types';
+import { Employee, MonthlyMovement, MonthlyParameters, PayrollResult } from '../types';
 import { runPayroll } from '../payroll-engine';
 
 /**
@@ -7,7 +7,8 @@ import { runPayroll } from '../payroll-engine';
  */
 export const calculatePayroll = (
   employee: Employee,
-  params: MonthlyParameters
+  params: MonthlyParameters,
+  movements: MonthlyMovement[] = []
 ): PayrollResult => {
-  return runPayroll(employee, params);
+  return runPayroll(employee, params, movements);
 };

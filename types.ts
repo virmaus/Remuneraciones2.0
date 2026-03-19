@@ -127,6 +127,16 @@ export interface PayrollResult {
   };
 }
 
+export type MonthlyMovementType =
+  | 'HABER_IMPONIBLE'
+  | 'HABER_NO_IMPONIBLE'
+  | 'DESCUENTO_LEGAL'
+  | 'DESCUENTO_VOLUNTARIO'
+  | 'LICENCIA'
+  | 'INASISTENCIA';
+
+export type MovementUnit = 'PESOS' | 'DIAS' | 'HORAS' | 'UF' | 'PORCENTAJE';
+
 export interface MonthlyParameters {
   id: string;
   year: number;
@@ -188,9 +198,9 @@ export interface MonthlyMovement {
   companyId: string;
   month: number;
   year: number;
-  type: 'HABER_IMPONIBLE' | 'HABER_NO_IMPONIBLE' | 'DESCUENTO_LEGAL' | 'DESCUENTO_VOLUNTARIO' | 'LICENCIA' | 'INASISTENCIA';
+  type: MonthlyMovementType;
   description: string;
   amount: number;
-  unit: 'PESOS' | 'DIAS' | 'HORAS' | 'UF' | 'PORCENTAJE';
+  unit: MovementUnit;
   date: string;
 }
